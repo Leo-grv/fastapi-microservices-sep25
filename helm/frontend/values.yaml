@@ -1,0 +1,17 @@
+replicaCount: 1
+
+image:
+  repository: leogrv22/frontend
+  tag: dev
+  pullPolicy: IfNotPresent
+
+env:
+  NEXT_PUBLIC_API_BASE: "http://54.229.164.217"  # ← IP Publique VM
+
+service:
+  port: 3000
+
+ingress:
+  enabled: true
+  className: traefik
+  path: /admin
