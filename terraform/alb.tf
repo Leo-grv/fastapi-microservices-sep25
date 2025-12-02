@@ -33,7 +33,7 @@ resource "aws_lb" "main" {
 # ============================================================================
 
 resource "aws_lb_target_group" "traefik" {
-  name     = "${var.project_name}-${var.environment}-traefik"
+  name     = "${substr(var.project_name, 0, 15)}-${var.environment}-trf"
   port     = 30080  # NodePort de Traefik (sera configuré dans K8s)
   protocol = "HTTP"
   vpc_id   = aws_vpc.main.id

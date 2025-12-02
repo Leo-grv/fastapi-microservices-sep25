@@ -6,7 +6,7 @@ module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 19.0"
 
-  cluster_name    = "${var.project_name}-${var.environment}"
+  cluster_name    = "${substr(var.project_name, 0, 10)}-${var.environment}"
   cluster_version = var.eks_cluster_version
 
   vpc_id     = aws_vpc.main.id
@@ -25,7 +25,7 @@ module "eks" {
   # Managed node groups
   eks_managed_node_groups = {
     main = {
-      name = "${var.project_name}-${var.environment}-node-group"
+      name = "main-ng"
 
       instance_types = var.eks_node_instance_types
       capacity_type  = "ON_DEMAND"

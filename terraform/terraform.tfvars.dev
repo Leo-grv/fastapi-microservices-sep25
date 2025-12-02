@@ -30,7 +30,7 @@ rds_multi_az          = false  # Pas de Multi-AZ en dev pour économiser
 
 # Route53
 domain_name         = "leotest.abrdns.com"
-create_route53_zone = false  # false si la zone existe déjà
+create_route53_zone = true  
 
 # Application
 docker_images = {
