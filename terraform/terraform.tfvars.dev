@@ -26,7 +26,6 @@ rds_allocated_storage = 20
 rds_engine_version    = "15.4"
 rds_database_name     = "microservices_dev"
 rds_master_username   = "admin"
-rds_master_password   = "CHANGEME_DEV_PASSWORD_123!"  # ⚠️ À changer !
 rds_multi_az          = false  # Pas de Multi-AZ en dev pour économiser
 
 # Route53
@@ -34,8 +33,6 @@ domain_name         = "leotest.abrdns.com"
 create_route53_zone = false  # false si la zone existe déjà
 
 # Application
-app_secret_key = "dev-secret-key-change-me-123456789"  # ⚠️ À changer !
-
 docker_images = {
   auth     = "leogrv22/auth:dev"
   users    = "leogrv22/users:dev"

@@ -84,6 +84,19 @@ module "eks" {
   )
 }
 
+# Installer External Secrets Operator via Helm
+resource "helm_release" "external_secrets" {
+  depends_on = [module.eks]
+
+  name       = "external-secrets"
+  repository = "https://charts.external-secrets.io"
+  chart      = "external-secrets"
+  namespace  = "external-secrets-system"
+  create_namespace = true
+
+  version = "0.9.9"
+}
+
 # ============================================================================
 # KUBECONFIG
 # ============================================================================

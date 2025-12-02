@@ -120,12 +120,6 @@ variable "rds_master_username" {
   sensitive   = true
 }
 
-variable "rds_master_password" {
-  description = "Password master RDS"
-  type        = string
-  sensitive   = true
-}
-
 variable "rds_multi_az" {
   description = "Activer Multi-AZ pour RDS"
   type        = bool
@@ -151,12 +145,6 @@ variable "create_route53_zone" {
 # ============================================================================
 # APPLICATION
 # ============================================================================
-
-variable "app_secret_key" {
-  description = "Secret key pour l'application"
-  type        = string
-  sensitive   = true
-}
 
 variable "docker_images" {
   description = "Images Docker des microservices"

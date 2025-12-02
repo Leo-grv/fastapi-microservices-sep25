@@ -9,7 +9,7 @@ metadata:
     kubernetes.io/ingress.class: traefik
 spec:
   rules:
-    - host: {{ .Values.ingress.host | default "localhost" }}
+    - host: api.leotest.abrdns.com
       http:
         paths:
           - path: {{ .Values.ingress.path }}

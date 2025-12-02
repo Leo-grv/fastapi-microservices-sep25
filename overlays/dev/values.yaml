@@ -1,31 +1,38 @@
 global:
   imageRegistry: docker.io
-  secretKey: "mydevsecret"
-  databaseUrl: "postgresql://postgres:postgres@postgres-postgresql.dev.svc.cluster.local:5432/postgres"
+  environment: dev
+  useExternalSecrets: true  # Activer ESO pour AWS
 
 auth:
+  ingress:
+    enabled: true
+    host: "api.leotest.abrdns.com"
+    path: /auth
   image:
     repository: leogrv22/auth
     tag: dev
-  secrets:
-    SECRET_KEY: "mydevsecret"
-    DATABASE_URL: "postgresql://postgres:postgres@postgres-postgresql.dev.svc.cluster.local:5432/postgres"
+  # Les secrets seront lus depuis ESO
+  secrets: {}
 
 users:
+  ingress:
+    enabled: true
+    host: "api.leotest.abrdns.com"
+    path: /users
   image:
     repository: leogrv22/users
     tag: dev
-  secrets:
-    SECRET_KEY: "mydevsecret"
-    DATABASE_URL: "postgresql://postgres:postgres@postgres-postgresql.dev.svc.cluster.local:5432/postgres"
+  secrets: {}
 
 items:
+  ingress:
+    enabled: true
+    host: "api.leotest.abrdns.com"
+    path: /items
   image:
     repository: leogrv22/items
     tag: dev
-  secrets:
-    SECRET_KEY: "mydevsecret"
-    DATABASE_URL: "postgresql://postgres:postgres@postgres-postgresql.dev.svc.cluster.local:5432/postgres"
+  secrets: {}
 
 frontend:
   image:
@@ -33,7 +40,8 @@ frontend:
     repository: leogrv22/frontend
     tag: dev
   env:
-    NEXT_PUBLIC_API_BASE: "http://54.229.164.217"
+    NEXT_PUBLIC_API_BASE: "https://api.leotest.abrdns.com"
   ingress:
     enabled: true
+    host: "app.leotest.abrdns.com"
     path: /

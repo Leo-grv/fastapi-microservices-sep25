@@ -65,7 +65,7 @@ resource "aws_db_instance" "postgresql" {
   # Database
   db_name  = var.rds_database_name
   username = var.rds_master_username
-  password = var.rds_master_password
+  password = local.rds_password 
   port     = 5432
 
   # Network
@@ -140,26 +140,3 @@ resource "aws_iam_role_policy_attachment" "rds_monitoring" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
 }
 
-# ============================================================================
-# KUBERNETES SECRET POUR DATABASE_URL
-# ============================================================================
-
-resource "kubernetes_secret" "database_url" {
-  depends_on = [module.eks, aws_db_instance.postgresql]
-
-  metadata {
-    name      = "database-credentials"
-    namespace = "default"
-  }
-
-  data = {
-    DATABASE_URL = "postgresql://${var.rds_master_username}:${var.rds_master_password}@${aws_db_instance.postgresql.endpoint}/${var.rds_database_name}"
-    DB_HOST      = aws_db_instance.postgresql.address
-    DB_PORT      = tostring(aws_db_instance.postgresql.port)
-    DB_NAME      = var.rds_database_name
-    DB_USERNAME  = var.rds_master_username
-    DB_PASSWORD  = var.rds_master_password
-  }
-
-  type = "Opaque"
-}
