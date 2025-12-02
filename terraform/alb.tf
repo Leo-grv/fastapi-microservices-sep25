@@ -9,9 +9,16 @@ resource "aws_lb" "main" {
   security_groups    = [aws_security_group.alb.id]
   subnets            = aws_subnet.public[*].id
 
-  enable_deletion_protection = var.environment == "prod" ? true : false
-  enable_http2               = true
+  enable_deletion_protection       = var.environment == "prod" ? true : false
+  enable_http2                     = true
   enable_cross_zone_load_balancing = true
+
+  access_logs {
+    bucket  = aws_s3_bucket.alb_logs.bucket
+    enabled = true
+  }
+
+  depends_on = [aws_s3_bucket_policy.alb_logs]
 
   tags = merge(
     var.tags,

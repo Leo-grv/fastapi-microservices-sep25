@@ -87,7 +87,7 @@ output "rds_database_name" {
 
 output "database_url" {
   description = "URL complète de connexion à la base de données"
-  value       = "postgresql://${var.rds_master_username}:${var.rds_master_password}@${aws_db_instance.postgresql.endpoint}/${var.rds_database_name}"
+  value       = "postgresql://${var.rds_master_username}:${local.rds_password}@${aws_db_instance.postgresql.endpoint}/${var.rds_database_name}"
   sensitive   = true
 }
 

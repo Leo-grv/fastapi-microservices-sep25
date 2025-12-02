@@ -29,6 +29,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "alb_logs" {
     id     = "delete-old-logs"
     status = "Enabled"
 
+    filter {}  # ← AJOUTER CETTE LIGNE
+
     expiration {
       days = var.environment == "prod" ? 90 : 7
     }
@@ -64,15 +66,6 @@ resource "aws_s3_bucket_policy" "alb_logs" {
   })
 }
 
-# Enable logging sur l'ALB
-resource "aws_lb" "main_logging" {
-  depends_on = [aws_s3_bucket_policy.alb_logs]
-
-  access_logs {
-    bucket  = aws_s3_bucket.alb_logs.bucket
-    enabled = true
-  }
-}
 
 # ============================================================================
 # S3 BUCKET POUR APPLICATION DATA (optionnel)
