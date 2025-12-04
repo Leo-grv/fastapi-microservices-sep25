@@ -85,7 +85,7 @@ resource "aws_security_group" "eks_nodes" {
   ingress {
     description = "Allow nodes to communicate with each other"
     from_port   = 0
-    to_port     = 65535
+    to_port     = 0
     protocol    = "-1"
     self        = true
   }

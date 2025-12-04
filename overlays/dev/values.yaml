@@ -40,7 +40,7 @@ frontend:
     repository: leogrv22/frontend
     tag: dev
   env:
-    NEXT_PUBLIC_API_BASE: "https://api.leotest.abrdns.com"
+    NEXT_PUBLIC_API_BASE: "http://api.leotest.abrdns.com"
   ingress:
     enabled: true
     host: "app.leotest.abrdns.com"

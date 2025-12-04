@@ -3,7 +3,7 @@
 # ============================================================================
 
 resource "aws_lb" "main" {
-  name               = "${var.project_name}-${var.environment}-alb"
+  name               = "${substr(var.project_name, 0, 15)}-${var.environment}-alb"
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
@@ -13,12 +13,11 @@ resource "aws_lb" "main" {
   enable_http2                     = true
   enable_cross_zone_load_balancing = true
 
-  access_logs {
-    bucket  = aws_s3_bucket.alb_logs.bucket
-    enabled = true
-  }
-
-  depends_on = [aws_s3_bucket_policy.alb_logs]
+  # Logs désactivés pour dev
+  # access_logs {
+  #   bucket  = aws_s3_bucket.alb_logs.bucket
+  #   enabled = true
+  # }
 
   tags = merge(
     var.tags,
@@ -29,12 +28,12 @@ resource "aws_lb" "main" {
 }
 
 # ============================================================================
-# TARGET GROUP - TRAEFIK
+# TARGET GROUP pour Traefik
 # ============================================================================
 
 resource "aws_lb_target_group" "traefik" {
   name     = "${substr(var.project_name, 0, 15)}-${var.environment}-trf"
-  port     = 30080  # NodePort de Traefik (sera configuré dans K8s)
+  port     = 30080
   protocol = "HTTP"
   vpc_id   = aws_vpc.main.id
 
@@ -44,9 +43,9 @@ resource "aws_lb_target_group" "traefik" {
     unhealthy_threshold = 2
     timeout             = 5
     interval            = 30
-    path                = "/ping"  # Endpoint de health check de Traefik
+    path                = "/ping"
     protocol            = "HTTP"
-    matcher             = "200"
+    matcher             = "200,404"
   }
 
   deregistration_delay = 30
@@ -60,98 +59,44 @@ resource "aws_lb_target_group" "traefik" {
 }
 
 # ============================================================================
-# LISTENER HTTP (redirige vers HTTPS)
+# LISTENER HTTP (Port 80)
 # ============================================================================
 
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
-  port              = 80
+  port              = "80"
   protocol          = "HTTP"
 
   default_action {
-    type = "redirect"
-
-    redirect {
-      port        = "443"
-      protocol    = "HTTPS"
-      status_code = "HTTP_301"
-    }
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.traefik.arn
   }
-
-  tags = var.tags
 }
 
 # ============================================================================
-# LISTENER HTTPS
+# LISTENER HTTPS (Port 443) - Seulement pour PROD
 # ============================================================================
 
 resource "aws_lb_listener" "https" {
+  count = var.environment == "prod" ? 1 : 0
+
   load_balancer_arn = aws_lb.main.arn
-  port              = 443
+  port              = "443"
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS-1-2-2017-01"
-  certificate_arn   = aws_acm_certificate.main.arn
+  certificate_arn   = aws_acm_certificate_validation.main[0].certificate_arn
 
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.traefik.arn
   }
-
-  depends_on = [aws_acm_certificate_validation.main]
-
-  tags = var.tags
 }
 
 # ============================================================================
-# LISTENER RULES - API
+# ATTACHMENT du Target Group aux instances EKS
 # ============================================================================
 
-resource "aws_lb_listener_rule" "api" {
-  listener_arn = aws_lb_listener.https.arn
-  priority     = 100
-
-  action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.traefik.arn
-  }
-
-  condition {
-    host_header {
-      values = ["api.${var.domain_name}"]
-    }
-  }
-
-  tags = var.tags
-}
-
-# ============================================================================
-# LISTENER RULES - APP/FRONTEND
-# ============================================================================
-
-resource "aws_lb_listener_rule" "app" {
-  listener_arn = aws_lb_listener.https.arn
-  priority     = 200
-
-  action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.traefik.arn
-  }
-
-  condition {
-    host_header {
-      values = ["app.${var.domain_name}"]
-    }
-  }
-
-  tags = var.tags
-}
-
-# ============================================================================
-# AUTO SCALING TARGET ATTACHMENT
-# Attache automatiquement les nodes EKS au target group
-# ============================================================================
-
-resource "aws_autoscaling_attachment" "traefik" {
+resource "aws_autoscaling_attachment" "eks_nodes" {
   autoscaling_group_name = module.eks.eks_managed_node_groups["main"].node_group_autoscaling_group_names[0]
   lb_target_group_arn    = aws_lb_target_group.traefik.arn
 }
