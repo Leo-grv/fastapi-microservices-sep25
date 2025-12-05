@@ -1,14 +1,14 @@
-version: "3.9"
-
 services:
 
   traefik:
     image: traefik:v2.11
     command:
       - "--providers.docker=true"
+      - "--providers.docker.watch=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=traefik-network"
       - "--api.insecure=true"
       - "--entrypoints.web.address=:80"
-      - "--providers.docker.exposedbydefault=false"
     ports:
       - "80:80"
       - "8080:8080"
@@ -21,6 +21,7 @@ services:
     build: ./Microservices/gateway
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=traefik-network"
       - "traefik.http.routers.gateway.rule=PathPrefix(`/`)"
       - "traefik.http.services.gateway.loadbalancer.server.port=8000"
     networks:
@@ -30,6 +31,7 @@ services:
     build: ./Microservices/auth
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=traefik-network"
       - "traefik.http.routers.auth.rule=PathPrefix(`/auth`)"
       - "traefik.http.services.auth.loadbalancer.server.port=8000"
     networks:
@@ -39,6 +41,7 @@ services:
     build: ./Microservices/users
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=traefik-network"
       - "traefik.http.routers.users.rule=PathPrefix(`/users`)"
       - "traefik.http.services.users.loadbalancer.server.port=8000"
     networks:
@@ -48,6 +51,7 @@ services:
     build: ./Microservices/items
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=traefik-network"
       - "traefik.http.routers.items.rule=PathPrefix(`/items`)"
       - "traefik.http.services.items.loadbalancer.server.port=8000"
     networks:
