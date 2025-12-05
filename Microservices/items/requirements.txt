@@ -1,9 +1,0 @@
-fastapi
-uvicorn[standard]
-sqlmodel
-pydantic>=2
-pydantic-settings>=2
-PyJWT
-email-validator
-psycopg2-binary
-python-multipart

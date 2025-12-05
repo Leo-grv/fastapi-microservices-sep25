@@ -1,1 +1,41 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+.env
+.venv/
+env/
+venv/
+
+# FastAPI / Uvicorn
+*.db
+*.sqlite
+instance/
+
+# Docker
+postgres_data/
+*.pid
+
+# Terraform
 .terraform/
+terraform.tfstate
+terraform.tfstate.backup
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# IDE / Editors
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+build/
