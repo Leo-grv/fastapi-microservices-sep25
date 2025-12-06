@@ -39,3 +39,19 @@ Thumbs.db
 # Build artifacts
 dist/
 build/
+
+# Ne jamais versionner les images docker
+*.tar
+*.tar.gz
+
+# Ne jamais versionner les archives
+*.zip
+
+# Ne jamais versionner le chart téléchargé
+traefik-helm-chart-master/
+
+# Ne jamais versionner les fichiers Kubernetes locaux
+k8s/
+
+# Ne jamais versionner un autre dépôt git
+fastapi-microservices-sep25/
