@@ -1,114 +1,58 @@
+version: "3.9"
 
 services:
-  # ---------------------------------------------------------------------------
-  # PostgreSQL Database
-  # ---------------------------------------------------------------------------
-  postgres-db:
-    image: postgres:15
-    container_name: postgres-db
-    restart: always
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: users_db
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    networks:
-      - traefik-network
-    ports:
-      - "5432:5432"
 
-  # ---------------------------------------------------------------------------
-  # USERS SERVICE (avec PostgreSQL)
-  # ---------------------------------------------------------------------------
+  traefik:
+    image: traefik:v2.11
+    container_name: fastapi-microservices-traefik
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedByDefault=false"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+      - "8080:8080" # Dashboard
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks:
+      - traefik-net
+    restart: unless-stopped
+
   users-service:
-    build: ./Microservices/users
-    container_name: fastapi-microservices-sep25-users-1
-    restart: always
+    build:
+      context: ./fastapi-microservices-sep25/Microservices/users
+      dockerfile: Dockerfile
+    container_name: fastapi-microservices-users
     depends_on:
       - postgres-db
     environment:
-      DATABASE_URL: "postgresql://postgres:postgres@postgres-db:5432/users_db"
-    command: uvicorn main:app --host 0.0.0.0 --port 8000
-    networks:
-      - traefik-network
+      DATABASE_URL: postgresql://postgres:postgres@postgres-db:5432/usersdb
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.users.rule=PathPrefix(`/users`)
-      - traefik.http.services.users.loadbalancer.server.port=8000
-
-  # ---------------------------------------------------------------------------
-  # AUTH SERVICE
-  # ---------------------------------------------------------------------------
-  auth-service:
-    build: ./Microservices/auth
-    container_name: fastapi-microservices-sep25-auth-1
-    restart: always
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik-net"
+      - "traefik.http.routers.users.rule=PathPrefix(`/users`)"
+      - "traefik.http.routers.users.entrypoints=web"
+      - "traefik.http.services.users.loadbalancer.server.port=8000"
     networks:
-      - traefik-network
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.auth.rule=PathPrefix(`/auth`)
-      - traefik.http.services.auth.loadbalancer.server.port=8000
+      - traefik-net
+    restart: unless-stopped
 
-  # ---------------------------------------------------------------------------
-  # ITEMS SERVICE
-  # ---------------------------------------------------------------------------
-  items-service:
-    build: ./Microservices/items
-    container_name: fastapi-microservices-sep25-items-1
-    restart: always
-    networks:
-      - traefik-network
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.items.rule=PathPrefix(`/items`)
-      - traefik.http.services.items.loadbalancer.server.port=8000
-
-  # ---------------------------------------------------------------------------
-  # API GATEWAY
-  # ---------------------------------------------------------------------------
-  gateway-service:
-    build: ./Microservices/gateway
-    container_name: fastapi-microservices-sep25-gateway-1
-    restart: always
-    depends_on:
-      - auth-service
-      - users-service
-      - items-service
-    networks:
-      - traefik-network
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.gateway.rule=PathPrefix(`/`)
-      - traefik.http.services.gateway.loadbalancer.server.port=80
-
-  # ---------------------------------------------------------------------------
-  # TRAEFIK (Reverse Proxy)
-  # ---------------------------------------------------------------------------
-  traefik:
-    image: traefik:v2.11
-    container_name: fastapi-microservices-sep25-traefik-1
-    restart: always
-    command:
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--entrypoints.web.address=:80"
-      - "--api.dashboard=true"
-    ports:
-      - "80:80"
-      - "8080:8080"   # Dashboard
+  postgres-db:
+    image: postgres:15
+    container_name: postgres-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: usersdb
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - postgres_data:/var/lib/postgresql/data
     networks:
-      - traefik-network
-
-# ---------------------------------------------------------------------------
-# VOLUMES & NETWORK
-# ---------------------------------------------------------------------------
-volumes:
-  postgres-data:
+      - traefik-net
+    restart: unless-stopped
 
 networks:
-  traefik-network:
-    driver: bridge
+  traefik-net:
+
+volumes:
+  postgres_data:

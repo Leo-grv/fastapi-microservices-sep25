@@ -6,20 +6,12 @@ from sqlalchemy.exc import IntegrityError
 from database import SessionLocal, engine
 import models
 
-# -----------------------------------------------------------
-# 🔥 CRÉATION AUTOMATIQUE DES TABLES DANS POSTGRESQL
-# -----------------------------------------------------------
-# Ce code est ESSENTIEL : il crée la table "users" au démarrage
-models.Base.metadata.create_all(bind=engine)
-
-# -----------------------------------------------------------
-# 🚀 APPLICATION FASTAPI
-# -----------------------------------------------------------
 app = FastAPI()
 
-# -----------------------------------------------------------
-# 🧩 Dépendance : ouverture / fermeture automatique de la DB
-# -----------------------------------------------------------
+@app.on_event("startup")
+def on_startup():
+    models.Base.metadata.create_all(bind=engine)
+
 def get_db():
     db = SessionLocal()
     try:
@@ -27,41 +19,27 @@ def get_db():
     finally:
         db.close()
 
-# -----------------------------------------------------------
-# 🧑‍🏫 Modèle utilisé pour la création d’utilisateur
-# -----------------------------------------------------------
 class UserCreate(BaseModel):
     username: str
     password: str
 
-# -----------------------------------------------------------
-# ➕ Route : création d’un utilisateur
-# -----------------------------------------------------------
 @app.post("/users")
 def create_user(user: UserCreate, db: Session = Depends(get_db)):
     new_user = models.User(username=user.username, password=user.password)
-
     try:
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
         return {"message": "User created", "id": new_user.id}
-
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=400, detail="Username already exists")
 
-# -----------------------------------------------------------
-# 📄 Route : lister tous les utilisateurs
-# -----------------------------------------------------------
 @app.get("/users")
 def list_users(db: Session = Depends(get_db)):
     users = db.query(models.User).all()
     return [{"id": u.id, "username": u.username} for u in users]
 
-# -----------------------------------------------------------
-# 🔍 Route : vérifier si un utilisateur existe
-# -----------------------------------------------------------
 @app.post("/users/check")
 def check_user(data: dict, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.username == data["username"]).first()
