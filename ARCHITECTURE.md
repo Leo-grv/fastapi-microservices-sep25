@@ -1,343 +1,304 @@
-# 🏗️ Architecture AWS - Microservices Platform
+# 🏗️ Architecture - FastAPI Microservices Platform
 
 ## 📊 Vue d'ensemble
 
-```
-                                    ┌─────────────────────────────────────┐
-                                    │         Internet / Users            │
-                                    │                                     │
-                                    │  🌍 https://api.leotest.abrdns.com  │
-                                    │  🌍 https://app.leotest.abrdns.com  │
-                                    └──────────────────┬──────────────────┘
-                                                       │
-                                                       │ HTTPS (443)
-                                                       │
-                              ┌────────────────────────▼────────────────────────┐
-                              │           Route 53 (DNS)                        │
-                              │  ┌─────────────────────────────────────────┐   │
-                              │  │  api.leotest.abrdns.com → ALB           │   │
-                              │  │  app.leotest.abrdns.com → ALB           │   │
-                              │  │  Certificate Manager (SSL/TLS)          │   │
-                              │  └─────────────────────────────────────────┘   │
-                              └────────────────────────┬────────────────────────┘
-                                                       │
-                                                       │
-                              ┌────────────────────────▼────────────────────────┐
-                              │   Application Load Balancer (ALB)               │
-                              │   ┌────────────────────────────────┐            │
-                              │   │  Listener 443 (HTTPS)          │            │
-                              │   │  Listener  80 (HTTP → 443)     │            │
-                              │   │  Target Group: Traefik:30080   │            │
-                              │   └────────────────────────────────┘            │
-                              └────────────────────────┬────────────────────────┘
-                                                       │
-                ┌──────────────────────────────────────┼──────────────────────────────────────┐
-                │                                                                              │
-                │                      AWS VPC (10.0.0.0/16)                                   │
-                │  Region: eu-west-3 (Paris)                                                   │
-                │                                                                              │
-                │  ┌────────────────────────────────────────────────────────────────────┐    │
-                │  │                    Internet Gateway                                 │    │
-                │  └────────────────────────┬───────────────┬───────────────────────────┘    │
-                │                           │               │                                 │
-                │          ┌────────────────┴───────┐  ┌───┴────────────────┐                │
-                │          │   Availability Zone A  │  │  Availability Zone B│                │
-                │          │   (eu-west-3a)         │  │  (eu-west-3b)       │                │
-                │          │                        │  │                     │                │
-                │          │  ┌──────────────────┐ │  │ ┌──────────────────┐│                │
-                │          │  │  Public Subnet   │ │  │ │  Public Subnet   ││                │
-                │          │  │  10.0.1.0/24     │ │  │ │  10.0.10.0/24    ││                │
-                │          │  │                  │ │  │ │                  ││                │
-                │          │  │  ┌────────────┐ │ │  │ │  ┌────────────┐  ││                │
-                │          │  │  │NAT Gateway │ │ │  │ │  │NAT Gateway │  ││                │
-                │          │  │  │    (EIP)   │ │ │  │ │  │    (EIP)   │  ││                │
-                │          │  │  └─────┬──────┘ │ │  │ │  └─────┬──────┘  ││                │
-                │          │  └────────┼────────┘ │  │ └────────┼─────────┘│                │
-                │          │           │          │  │          │          │                │
-                │          │  ┌────────▼────────┐ │  │ ┌────────▼─────────┐│                │
-                │          │  │ Private Subnet  │ │  │ │ Private Subnet   ││                │
-                │          │  │  EKS Nodes      │ │  │ │  EKS Nodes       ││                │
-                │          │  │  10.0.2.0/24    │ │  │ │  10.0.20.0/24    ││                │
-                │          │  │                 │ │  │ │                  ││                │
-                │          │  │ ┌─────────────┐ │ │  │ │ ┌──────────────┐ ││                │
-                │          │  │ │EKS Node     │ │ │  │ │ │EKS Node      │ ││                │
-                │          │  │ │t3.medium    │ │ │  │ │ │t3.medium     │ ││                │
-                │          │  │ │             │ │ │  │ │ │              │ ││                │
-                │          │  │ │ ┌─────────┐ │ │ │  │ │ │ ┌──────────┐ │ ││                │
-                │          │  │ │ │Traefik  │ │ │ │  │ │ │ │Traefik   │ │ ││                │
-                │          │  │ │ │NodePort │ │ │ │  │ │ │ │NodePort  │ │ ││                │
-                │          │  │ │ │  30080  │ │ │ │  │ │ │ │  30080   │ │ ││                │
-                │          │  │ │ └────┬────┘ │ │ │  │ │ │ └────┬─────┘ │ ││                │
-                │          │  │ │      │      │ │ │  │ │ │      │       │ ││                │
-                │          │  │ │ ┌────▼────┐ │ │ │  │ │ │ ┌────▼─────┐ │ ││                │
-                │          │  │ │ │Pods     │ │ │ │  │ │ │ │Pods      │ │ ││                │
-                │          │  │ │ │         │ │ │ │  │ │ │ │          │ │ ││                │
-                │          │  │ │ │•Auth    │ │ │ │  │ │ │ │•Auth     │ │ ││                │
-                │          │  │ │ │•Users   │ │ │ │  │ │ │ │•Users    │ │ ││                │
-                │          │  │ │ │•Items   │ │ │ │  │ │ │ │•Items    │ │ ││                │
-                │          │  │ │ │•Frontend│ │ │ │  │ │ │ │•Frontend │ │ ││                │
-                │          │  │ │ └─────────┘ │ │ │  │ │ │ └──────────┘ │ ││                │
-                │          │  │ └─────────────┘ │ │  │ │ └──────────────┘ ││                │
-                │          │  └─────────┬───────┘ │  │ └─────────┬────────┘│                │
-                │          │            │         │  │           │         │                │
-                │          │  ┌─────────▼───────┐ │  │ ┌─────────▼────────┐│                │
-                │          │  │ Private Subnet  │ │  │ │ Private Subnet   ││                │
-                │          │  │  RDS            │ │  │ │  RDS             ││                │
-                │          │  │  10.0.3.0/24    │ │  │ │  10.0.30.0/24    ││                │
-                │          │  │                 │ │  │ │                  ││                │
-                │          │  │ ┌─────────────┐ │ │  │ │ ┌──────────────┐ ││                │
-                │          │  │ │ PostgreSQL  │ │ │  │ │ │ PostgreSQL   │ ││                │
-                │          │  │ │  (Master)   │─┼─┼──┼─┼─│  (Standby)   │ ││ Multi-AZ       │
-                │          │  │ │db.t3.small  │ │ │  │ │ │ db.t3.small  │ ││ [PROD only]    │
-                │          │  │ │   Port 5432 │ │ │  │ │ │   Port 5432  │ ││                │
-                │          │  │ └─────────────┘ │ │  │ │ └──────────────┘ ││                │
-                │          │  └─────────────────┘ │  │ └──────────────────┘│                │
-                │          └──────────────────────┘  └─────────────────────┘                │
-                │                                                                              │
-                │  ┌────────────────────────────────────────────────────────────────────┐    │
-                │  │                         Amazon S3                                   │    │
-                │  │  ┌──────────────────────────────────────────────────────────────┐  │    │
-                │  │  │  • ALB Logs Bucket (7-90 jours retention)                    │  │    │
-                │  │  │  • App Data Bucket (versioning activé en PROD)               │  │    │
-                │  │  └──────────────────────────────────────────────────────────────┘  │    │
-                │  └────────────────────────────────────────────────────────────────────┘    │
-                │                                                                              │
-                └──────────────────────────────────────────────────────────────────────────────┘
-```
-
-## 🔐 Security Groups
+Plateforme de microservices FastAPI déployable sur **k3s (local)** ou **AWS EKS (production)**.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     Security Groups                             │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  1. ALB Security Group                                          │
-│     ├─ Inbound:  80 (HTTP) from 0.0.0.0/0                       │
-│     ├─ Inbound:  443 (HTTPS) from 0.0.0.0/0                     │
-│     └─ Outbound: All                                            │
-│                                                                 │
-│  2. EKS Cluster Security Group                                  │
-│     ├─ Inbound:  443 from EKS Nodes SG                          │
-│     └─ Outbound: All                                            │
-│                                                                 │
-│  3. EKS Nodes Security Group                                    │
-│     ├─ Inbound:  All from self                                  │
-│     ├─ Inbound:  443 from EKS Cluster SG                        │
-│     ├─ Inbound:  30000-32767 from ALB SG                        │
-│     ├─ Inbound:  80, 443 from ALB SG                            │
-│     └─ Outbound: All                                            │
-│                                                                 │
-│  4. RDS Security Group                                          │
-│     ├─ Inbound:  5432 (PostgreSQL) from EKS Nodes SG            │
-│     └─ Outbound: All                                            │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-## 🔄 Flow des requêtes
-
-### Requête API (exemple: POST /auth/api/v1/login)
-
-```
-1. User → https://api.leotest.abrdns.com/auth/api/v1/login
-          │
-          ▼
-2. Route53 → Résolution DNS → ALB DNS
-          │
-          ▼
-3. ALB → Certificate Manager → Validation SSL
-          │
-          ▼
-4. ALB Listener 443 → Target Group
-          │
-          ▼
-5. Target Group → EKS Node (10.0.2.x:30080)
-          │
-          ▼
-6. Traefik Service (NodePort 30080)
-          │
-          ▼
-7. Traefik Middleware → Strip /auth prefix
-          │
-          ▼
-8. Auth Service (ClusterIP platform-auth:80)
-          │
-          ▼
-9. Auth Pod → FastAPI → /api/v1/login
-          │
-          ▼
-10. RDS PostgreSQL (10.0.3.x:5432)
-          │
-          ▼
-11. Response ← JWT Token
-          │
-          ▼
-12. User ← 200 OK + Token
-```
-
-### Requête Frontend (exemple: GET /)
-
-```
-1. User → https://app.leotest.abrdns.com/
-          │
-          ▼
-2. Route53 → ALB
-          │
-          ▼
-3. ALB → Target Group → Traefik
-          │
-          ▼
-4. Frontend Service → Next.js
-          │
-          ▼
-5. User ← HTML/JS/CSS
-```
-
-## 📊 Composants détaillés
-
-### VPC Configuration
-```yaml
-VPC:
-  CIDR: 10.0.0.0/16
-  DNS Hostnames: Enabled
-  DNS Support: Enabled
-  
-Subnets:
-  Public (ALB + NAT):
-    - 10.0.1.0/24  (AZ-A)
-    - 10.0.10.0/24 (AZ-B)
-  
-  Private EKS:
-    - 10.0.2.0/24  (AZ-A)
-    - 10.0.20.0/24 (AZ-B)
-    Tags:
-      - kubernetes.io/role/internal-elb: 1
-      - kubernetes.io/cluster/[name]: shared
-  
-  Private RDS:
-    - 10.0.3.0/24  (AZ-A)
-    - 10.0.30.0/24 (AZ-B)
-
-Internet Gateway: ✅
-NAT Gateways: 2 (un par AZ)
-```
-
-### EKS Configuration
-```yaml
-Cluster:
-  Version: 1.28
-  Endpoint: Public + Private
-  OIDC Provider: Enabled (for IRSA)
-  
-Node Group:
-  Instance Type: t3.medium
-  Desired: 2 (dev) / 3 (prod)
-  Min: 2
-  Max: 3 (dev) / 6 (prod)
-  Disk: 50GB gp3
-  
-Addons:
-  - coredns
-  - kube-proxy
-  - vpc-cni
-```
-
-### RDS Configuration
-```yaml
-Engine: PostgreSQL 15.4
-Instance: db.t3.small
-Storage: 20GB (dev) / 50GB (prod) gp3
-Multi-AZ: false (dev) / true (prod)
-Backup: 1 day (dev) / 7 days (prod)
-Encryption: Enabled
-Enhanced Monitoring: Enabled
-Port: 5432
-```
-
-### Load Balancer
-```yaml
-Type: Application Load Balancer
-Scheme: internet-facing
-IP Address Type: ipv4
-
-Listeners:
-  - Port 80:  HTTP → Redirect to 443
-  - Port 443: HTTPS → Target Group (Traefik)
-
-Target Group:
-  Protocol: HTTP
-  Port: 30080 (NodePort)
-  Health Check: /ping
-  Deregistration Delay: 30s
-```
-
-## 💰 Estimation des coûts par composant
-
-```
-┌─────────────────────────┬──────────┬──────────┐
-│ Composant               │   DEV    │   PROD   │
-├─────────────────────────┼──────────┼──────────┤
-│ EKS Control Plane       │  $73/mo  │  $73/mo  │
-│ EC2 (t3.medium x2/3)    │  $60/mo  │  $90/mo  │
-│ RDS (db.t3.small)       │  $30/mo  │  $60/mo  │
-│ ALB                     │  $20/mo  │  $20/mo  │
-│ NAT Gateway x2          │  $65/mo  │  $65/mo  │
-│ Data Transfer           │  $10/mo  │  $20/mo  │
-│ S3 Storage              │   $2/mo  │   $5/mo  │
-├─────────────────────────┼──────────┼──────────┤
-│ TOTAL                   │ ~$260/mo │ ~$333/mo │
-└─────────────────────────┴──────────┴──────────┘
-```
-
-## 🎯 High Availability (PROD)
-
-```
-✅ Multi-AZ Deployment
-  - 2 Availability Zones
-  - Nodes répartis sur les 2 AZ
-  - RDS Multi-AZ avec failover automatique
-  
-✅ Load Balancing
-  - ALB distribue le trafic
-  - Traefik load balance entre les pods
-  - RDS avec replica en standby
-  
-✅ Auto Scaling
-  - EKS Node Group peut scaler de 2 à 6 nodes
-  - Pods peuvent scaler horizontalement
-  
-✅ Backup & Recovery
-  - RDS automated backups (7 jours)
-  - S3 versioning activé
-  - Snapshots RDS avant destruction
-```
-
-## 🔒 Sécurité
-
-```
-✅ Network Security
-  - Private subnets pour EKS et RDS
-  - Security Groups restrictifs
-  - NAT Gateway pour sortie internet
-  
-✅ Encryption
-  - SSL/TLS via Certificate Manager
-  - RDS storage encrypted
-  - S3 server-side encryption
-  
-✅ IAM
-  - Rôles IAM pour EKS
-  - IRSA (IAM Roles for Service Accounts)
-  - Least privilege principle
-  
-✅ Monitoring
-  - RDS Enhanced Monitoring
-  - ALB Access Logs vers S3
-  - CloudWatch metrics
+│                         CLIENTS                                  │
+│                    (Browser / Mobile)                            │
+└────────────────┬────────────────────────────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    APPLICATION LOAD BALANCER                     │
+│              (AWS ALB ou Traefik sur k3s)                       │
+│                   Port 80 (HTTP) / 443 (HTTPS)                  │
+└────────────┬───────────────────────────┬────────────────────────┘
+             │                           │
+             ▼                           ▼
+    ┌────────────────┐          ┌────────────────┐
+    │   FRONTEND     │          │   API GATEWAY  │
+    │   (Next.js)    │          │   (Traefik)    │
+    │   Port 3000    │          │                │
+    └────────────────┘          └───┬────────────┘
+                                    │
+                    ┌───────────────┼───────────────┐
+                    ▼               ▼               ▼
+            ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+            │ AUTH SERVICE │ │USERS SERVICE │ │ITEMS SERVICE │
+            │  (FastAPI)   │ │  (FastAPI)   │ │  (FastAPI)   │
+            │  Port 8000   │ │  Port 8000   │ │  Port 8000   │
+            └──────┬───────┘ └──────┬───────┘ └──────┬───────┘
+                   │                │                │
+                   └────────────────┴────────────────┘
+                                    │
+                                    ▼
+                        ┌───────────────────────┐
+                        │   POSTGRESQL          │
+                        │   (RDS ou Pod)        │
+                        │   Port 5432           │
+                        └───────────────────────┘
 ```
 
 ---
 
-**Dernière mise à jour**: 2025  
-**Version**: 1.0.0
+## 🎯 Stack Technique
+
+### **Backend**
+- **Framework** : FastAPI 0.115+
+- **ORM** : SQLModel (SQLAlchemy 2.0)
+- **Auth** : JWT avec bcrypt
+- **Database** : PostgreSQL 17
+
+### **Frontend**
+- **Framework** : Next.js 14 (Pages Router)
+- **UI** : React + Tailwind CSS
+- **HTTP Client** : Axios
+- **Auth** : JWT stored in localStorage
+
+### **Infrastructure**
+- **Container** : Docker
+- **Orchestration** : Kubernetes (k3s local, EKS production)
+- **IaC** : Terraform
+- **Deployment** : Helm Charts
+- **CI/CD** : GitHub Actions (à venir)
+
+### **AWS Services (Production)**
+- **Compute** : EKS (Elastic Kubernetes Service)
+- **Database** : RDS PostgreSQL Multi-AZ
+- **Load Balancer** : Application Load Balancer (ALB)
+- **Secrets** : AWS Secrets Manager + External Secrets Operator
+- **Storage** : S3 (logs, backups)
+- **Networking** : VPC with public/private subnets
+
+---
+
+## 🔐 Sécurité
+
+### **Authentication Flow**
+```
+1. User → POST /auth/api/v1/login/access-token
+2. Auth Service → Verify credentials in DB
+3. Auth Service → Generate JWT token
+4. User → Store token in localStorage
+5. User → Send token in Authorization: Bearer <token>
+6. Services → Verify JWT + check user permissions
+```
+
+### **Secrets Management**
+
+**Local (k3s):**
+- Secrets stockés dans Kubernetes Secrets
+- ConfigMap pour configuration non-sensible
+
+**AWS (EKS):**
+- Secrets stockés dans AWS Secrets Manager
+- External Secrets Operator pour synchronisation
+- IAM Roles for Service Accounts (IRSA)
+
+---
+
+## 🌐 Networking
+
+### **Local (k3s)**
+```
+http://IP:30080/          → Frontend
+http://IP:30081/api/v1    → Auth Service
+http://IP:30082/api/v1    → Users Service
+http://IP:30083/api/v1    → Items Service
+```
+
+### **AWS (EKS)**
+```
+https://app.votredomaine.com/       → Frontend
+https://api.votredomaine.com/auth   → Auth Service
+https://api.votredomaine.com/users  → Users Service
+https://api.votredomaine.com/items  → Items Service
+```
+
+**Routing (Traefik Ingress):**
+```
+ALB (Port 80/443)
+  ↓
+Traefik (NodePort 30080)
+  ↓
+  ├─ /auth/*  → auth-service:80
+  ├─ /users/* → users-service:80
+  ├─ /items/* → items-service:80
+  └─ /*       → frontend-service:80
+```
+
+---
+
+## 📦 Microservices
+
+### **1. Auth Service**
+**Responsabilité** : Authentication & JWT generation
+
+**Endpoints** :
+- `POST /api/v1/login/access-token` - Login
+- `GET /api/v1/login/test-token` - Verify token
+- `GET /health` - Health check
+
+**Database Tables** : `user`
+
+---
+
+### **2. Users Service**
+**Responsabilité** : User management (CRUD)
+
+**Endpoints** :
+- `GET /api/v1/users/` - List users (superuser only)
+- `GET /api/v1/users/me` - Get current user
+- `PUT /api/v1/users/me` - Update profile
+- `GET /api/v1/users/{id}` - Get user by ID
+- `DELETE /api/v1/users/{id}` - Delete user (superuser)
+
+**Database Tables** : `user`
+
+---
+
+### **3. Items Service**
+**Responsabilité** : Item management (CRUD)
+
+**Endpoints** :
+- `GET /api/v1/items/` - List items
+- `POST /api/v1/items/` - Create item
+- `GET /api/v1/items/{id}` - Get item
+- `PUT /api/v1/items/{id}` - Update item
+- `DELETE /api/v1/items/{id}` - Delete item
+
+**Database Tables** : `item`
+
+---
+
+### **4. Frontend**
+**Responsabilité** : User interface
+
+**Pages** :
+- `/` - Login page
+- `/dashboard` - User management
+- `/items` - Items management
+- `/admin` - Admin panel (superuser only)
+
+---
+
+## 🗄️ Database Schema
+
+### **Table: user**
+```sql
+CREATE TABLE "user" (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email VARCHAR(255) UNIQUE NOT NULL,
+    hashed_password VARCHAR(255) NOT NULL,
+    full_name VARCHAR(255),
+    is_active BOOLEAN DEFAULT true,
+    is_superuser BOOLEAN DEFAULT false,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### **Table: item**
+```sql
+CREATE TABLE item (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    owner_id UUID REFERENCES "user"(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+---
+
+## 🔄 Environments
+
+### **Dev (k3s local)**
+- **VMs** : 1 node (2 vCPU, 4GB RAM)
+- **Database** : PostgreSQL pod
+- **Ingress** : Traefik (direct)
+- **SSL** : Non (HTTP only)
+- **Cost** : ~10$/mois
+
+### **Production (AWS EKS)**
+- **Compute** : 2-3 nodes t3.large
+- **Database** : RDS PostgreSQL Multi-AZ
+- **Ingress** : ALB → Traefik
+- **SSL** : ACM Certificate (auto-renewed)
+- **DNS** : Route53
+- **Cost** : ~250-300$/mois
+
+---
+
+## 📊 Monitoring & Observability
+
+### **Logs**
+- **Local** : `kubectl logs`
+- **AWS** : CloudWatch Logs
+
+### **Metrics** (à venir)
+- Prometheus + Grafana
+- Custom dashboards
+
+### **Alerting** (à venir)
+- CloudWatch Alarms
+- PagerDuty integration
+
+---
+
+## 🚀 Deployment
+
+### **Local (k3s)**
+```bash
+helm upgrade --install platform ./helm/platform \
+  -f ./overlays/dev/values.yaml \
+  -n dev --create-namespace
+```
+
+### **AWS (EKS)**
+```bash
+# 1. Deploy infrastructure
+cd terraform/
+terraform apply
+
+# 2. Configure kubectl
+aws eks update-kubeconfig --region eu-west-3 --name microservi-dev
+
+# 3. Deploy application
+cd ../
+helm upgrade --install platform ./helm/platform \
+  -f ./overlays/aws/values.yaml \
+  -n dev --create-namespace
+```
+
+---
+
+## 🔧 Maintenance
+
+### **Backup**
+- **Local** : Manual PostgreSQL dumps
+- **AWS** : RDS automated backups (7 days retention)
+
+### **Updates**
+- Rolling updates via Helm
+- Zero-downtime deployments
+
+### **Scaling**
+- **Local** : Manual pod scaling
+- **AWS** : Cluster Autoscaler + HPA
+
+---
+
+## 📚 Documentation
+
+- [README.md](./README.md) - Getting started
+- [AWS_MIGRATION.md](./AWS_MIGRATION.md) - Migration guide k3s → EKS
+- [API Documentation](http://localhost:30081/docs) - Swagger UI (local)
+
+---
+
+**Last updated** : December 2024

@@ -1,465 +1,726 @@
-# 🚀 Migration de votre projet Helm vers AWS EKS
+# 🚀 Migration de k3s vers AWS EKS
 
-Ce guide explique les modifications à apporter à vos charts Helm existants pour qu'ils fonctionnent sur AWS EKS.
-
-## 📋 Modifications nécessaires
-
-### 1️⃣ Créer un nouveau fichier de values pour AWS
-
-Créez `overlays/aws-dev/values.yaml` :
-
-```yaml
-global:
-  imageRegistry: docker.io
-  # ⚠️ Récupérer depuis: terraform output -raw database_url
-  databaseUrl: "SERA_REMPLI_PAR_TERRAFORM"
-  secretKey: "SERA_REMPLI_PAR_TERRAFORM"
-
-auth:
-  ingress:
-    enabled: false  # On utilise l'Ingress centralisé
-  image:
-    repository: leogrv22/auth
-    tag: dev
-  secrets:
-    # Utiliser le secret Kubernetes créé par Terraform
-    SECRET_KEY: null  # Sera lu depuis database-credentials
-    DATABASE_URL: null  # Sera lu depuis database-credentials
-
-users:
-  ingress:
-    enabled: false
-  image:
-    repository: leogrv22/users
-    tag: dev
-  secrets:
-    SECRET_KEY: null
-    DATABASE_URL: null
-
-items:
-  ingress:
-    enabled: false
-  image:
-    repository: leogrv22/items
-    tag: dev
-  secrets:
-    SECRET_KEY: null
-    DATABASE_URL: null
-
-frontend:
-  image:
-    registry: docker.io
-    repository: leogrv22/frontend
-    tag: dev
-  env:
-    # ⚠️ Remplacer par l'URL de l'ALB
-    NEXT_PUBLIC_API_BASE: "https://api.leotest.abrdns.com"
-  ingress:
-    enabled: true
-    host: "app.leotest.abrdns.com"
-    path: /
-```
-
-### 2️⃣ Modifier les Secrets pour utiliser le Secret Kubernetes
-
-Dans chaque service (auth, users, items), modifiez `templates/secret.yaml` :
-
-**Avant** (secret.yaml actuel) :
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: {{ include "auth.fullname" . }}-secret
-type: Opaque
-stringData:
-  SECRET_KEY: {{ .Values.secrets.SECRET_KEY | quote }}
-  DATABASE_URL: {{ .Values.secrets.DATABASE_URL | quote }}
-```
-
-**Après** (pour AWS) :
-```yaml
-{{- if .Values.secrets.SECRET_KEY }}
-apiVersion: v1
-kind: Secret
-metadata:
-  name: {{ include "auth.fullname" . }}-secret
-type: Opaque
-stringData:
-  SECRET_KEY: {{ .Values.secrets.SECRET_KEY | quote }}
-  DATABASE_URL: {{ .Values.secrets.DATABASE_URL | quote }}
-{{- end }}
-```
-
-### 3️⃣ Modifier les Deployments pour utiliser le Secret Terraform
-
-Dans chaque `templates/deployment.yaml`, modifiez la section `envFrom` :
-
-**Avant** :
-```yaml
-envFrom:
-  - secretRef:
-      name: {{ include "auth.fullname" . }}-secret
-```
-
-**Après** :
-```yaml
-envFrom:
-  {{- if .Values.secrets.SECRET_KEY }}
-  - secretRef:
-      name: {{ include "auth.fullname" . }}-secret
-  {{- else }}
-  # Utiliser le secret créé par Terraform
-  - secretRef:
-      name: database-credentials
-  {{- end }}
-```
-
-### 4️⃣ Créer un Ingress pour Traefik sur AWS
-
-Créez `helm/platform/templates/traefik-service.yaml` :
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: traefik
-  namespace: traefik
-spec:
-  type: NodePort
-  ports:
-    - name: web
-      port: 80
-      targetPort: 80
-      nodePort: 30080
-      protocol: TCP
-    - name: websecure
-      port: 443
-      targetPort: 443
-      nodePort: 30443
-      protocol: TCP
-  selector:
-    app.kubernetes.io/name: traefik
-    app.kubernetes.io/instance: traefik
-```
-
-### 5️⃣ Adapter les Ingress pour Traefik
-
-Modifiez vos Ingress pour utiliser les annotations Traefik :
-
-**helm/platform/templates/gateway-ingress.yaml** :
-
-```yaml
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: gateway-auth
-  namespace: dev
-  annotations:
-    kubernetes.io/ingress.class: traefik
-    traefik.ingress.kubernetes.io/router.middlewares: dev-strip-auth-prefix@kubernetescrd
-spec:
-  rules:
-    - host: api.leotest.abrdns.com
-      http:
-        paths:
-          - path: /auth
-            pathType: Prefix
-            backend:
-              service:
-                name: platform-auth
-                port:
-                  number: 80
+Ce guide détaille la procédure complète pour migrer votre application de **k3s (local)** vers **AWS EKS (production)**.
 
 ---
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: gateway-users
-  namespace: dev
-  annotations:
-    kubernetes.io/ingress.class: traefik
-    traefik.ingress.kubernetes.io/router.middlewares: dev-strip-users-prefix@kubernetescrd
-spec:
-  rules:
-    - host: api.leotest.abrdns.com
-      http:
-        paths:
-          - path: /users
-            pathType: Prefix
-            backend:
-              service:
-                name: platform-users
-                port:
-                  number: 80
+
+## 📋 Table des matières
+
+- [Vue d'ensemble](#-vue-densemble)
+- [Prérequis](#-prérequis)
+- [Étape 1 : Préparation](#-étape-1--préparation)
+- [Étape 2 : Infrastructure Terraform](#-étape-2--infrastructure-terraform)
+- [Étape 3 : Configuration Kubernetes](#-étape-3--configuration-kubernetes)
+- [Étape 4 : Déploiement Application](#-étape-4--déploiement-application)
+- [Étape 5 : Vérification](#-étape-5--vérification)
+- [Différences k3s vs EKS](#-différences-k3s-vs-eks)
+- [Troubleshooting](#-troubleshooting)
 
 ---
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: gateway-items
-  namespace: dev
-  annotations:
-    kubernetes.io/ingress.class: traefik
-    traefik.ingress.kubernetes.io/router.middlewares: dev-strip-items-prefix@kubernetescrd
-spec:
-  rules:
-    - host: api.leotest.abrdns.com
-      http:
-        paths:
-          - path: /items
-            pathType: Prefix
-            backend:
-              service:
-                name: platform-items
-                port:
-                  number: 80
+
+## 🎯 Vue d'ensemble
+
+### **Changements principaux**
+
+| Composant | k3s (Local) | AWS EKS (Production) |
+|-----------|-------------|----------------------|
+| **Kubernetes** | k3s single node | EKS Multi-AZ Cluster |
+| **Database** | PostgreSQL Pod | RDS PostgreSQL Multi-AZ |
+| **Load Balancer** | Traefik (direct) | ALB → Traefik (NodePort) |
+| **Secrets** | Kubernetes Secrets | AWS Secrets Manager + ESO |
+| **SSL** | Aucun (HTTP) | ACM Certificate (HTTPS) |
+| **DNS** | IP publique | Route53 |
+| **Backup** | Manuel | Automatisé (RDS) |
+| **Coût** | ~10$/mois | ~250-300$/mois |
 
 ---
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: gateway-frontend
-  namespace: dev
-  annotations:
-    kubernetes.io/ingress.class: traefik
-spec:
-  rules:
-    - host: app.leotest.abrdns.com
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: platform-frontend
-                port:
-                  number: 80
+
+## ✅ Prérequis
+
+### **1. Outils installés**
+
+```bash
+# Vérifier les versions
+aws --version          # AWS CLI 2.x
+terraform --version    # Terraform 1.5+
+kubectl version        # kubectl 1.28+
+helm version           # Helm 3.12+
 ```
 
-## 🔄 Procédure de déploiement complète
+### **2. Credentials AWS configurées**
 
-### Étape 1 : Déployer l'infrastructure Terraform
+```bash
+aws configure
+# AWS Access Key ID: VOTRE_ACCESS_KEY
+# AWS Secret Access Key: VOTRE_SECRET_KEY
+# Default region name: eu-west-3
+# Default output format: json
+
+# Vérifier
+aws sts get-caller-identity
+```
+
+### **3. Images Docker publiées**
+
+Assurez-vous que vos images sont sur Docker Hub :
+
+```bash
+docker images | grep leogrv22
+# leogrv22/auth:dev
+# leogrv22/users:dev
+# leogrv22/items:dev
+# leogrv22/frontend:dev
+```
+
+---
+
+## 📦 Étape 1 : Préparation
+
+### **1.1 Créer le secret AWS Secrets Manager**
+
+```bash
+aws secretsmanager create-secret \
+  --name microservices-platform-dev-secrets \
+  --description "Application secrets for dev environment" \
+  --secret-string '{
+    "rds_master_password": "ChangeThisSecurePassword123!",
+    "app_secret_key": "change-this-random-secret-key-32chars",
+    "SECRET_KEY": "another-secret-for-jwt-signing"
+  }' \
+  --region eu-west-3
+```
+
+**⚠️ Important :** Changez les valeurs par défaut !
+
+### **1.2 Vérifier le secret**
+
+```bash
+aws secretsmanager get-secret-value \
+  --secret-id microservices-platform-dev-secrets \
+  --region eu-west-3 \
+  --query SecretString \
+  --output text | jq .
+```
+
+### **1.3 Backup de la base de données locale (optionnel)**
+
+Si vous avez des données à migrer :
+
+```bash
+# Depuis k3s
+kubectl exec -n dev postgres-postgresql-0 -- \
+  pg_dump -U postgres postgres > backup.sql
+
+# Vous l'importerez plus tard dans RDS
+```
+
+---
+
+## 🏗️ Étape 2 : Infrastructure Terraform
+
+### **2.1 Vérifier les variables**
+
+Éditez `terraform/variables.tf` et vérifiez :
+
+```hcl
+variable "aws_region" {
+  default = "eu-west-3"  # ✅ Correct
+}
+
+variable "project_name" {
+  default = "microservices-platform"
+}
+
+variable "environment" {
+  default = "dev"
+}
+
+variable "rds_master_username" {
+  default = "postgres"  # ✅ Pas "admin" (mot réservé)
+}
+
+variable "rds_engine_version" {
+  default = "17.2"  # ✅ Version disponible
+}
+```
+
+### **2.2 Initialiser Terraform**
 
 ```bash
 cd terraform/
 
-# Copier les variables pour dev
-cp terraform.tfvars.dev terraform.tfvars
-
-# Modifier les secrets
-nano terraform.tfvars
-
-# Déployer
 terraform init
-terraform apply
+```
 
-# Noter les outputs
+### **2.3 Planifier le déploiement**
+
+```bash
+terraform plan
+```
+
+**Vérifiez que le plan va créer :**
+- ✅ VPC avec 6 subnets (3 publics, 3 privés)
+- ✅ EKS Cluster
+- ✅ 2+ Node Groups
+- ✅ RDS PostgreSQL
+- ✅ ALB + Target Groups
+- ✅ Security Groups
+- ✅ IAM Roles
+
+### **2.4 Déployer l'infrastructure**
+
+```bash
+terraform apply
+```
+
+**⏳ Durée : ~30-40 minutes**
+
+```
+Creating VPC...                          [████████] 2 min
+Creating Security Groups...              [████████] 1 min
+Creating IAM Roles...                    [████████] 1 min
+Creating RDS PostgreSQL...               [████████] 10-15 min
+Creating EKS Cluster...                  [████████] 10-15 min
+Creating EKS Node Groups...              [████████] 5-10 min
+Creating ALB...                          [████████] 3 min
+Installing External Secrets Operator...  [████████] 2 min
+Creating Kubernetes Secrets...           [████████] 1 min
+```
+
+### **2.5 Noter les outputs**
+
+```bash
 terraform output
 ```
 
-### Étape 2 : Configurer kubectl
+**Outputs importants :**
+- `eks_cluster_name` : microservi-dev
+- `rds_endpoint` : microservices-platform-dev-db.XXXXX.rds.amazonaws.com
+- `alb_dns_name` : microservices-p-dev-alb-XXXXX.elb.amazonaws.com
+- `configure_kubectl` : Commande pour kubectl
+
+---
+
+## ⚙️ Étape 3 : Configuration Kubernetes
+
+### **3.1 Configurer kubectl**
 
 ```bash
-# Récupérer la commande depuis Terraform
-terraform output configure_kubectl
+# Utiliser la commande depuis terraform output
+aws eks update-kubeconfig --region eu-west-3 --name microservi-dev
 
-# Exécuter
-aws eks update-kubeconfig --region eu-west-3 --name microservices-platform-dev
-
-# Vérifier
+# Vérifier la connexion
 kubectl get nodes
 ```
 
-### Étape 3 : Installer Traefik
+**Expected output :**
+```
+NAME                                           STATUS   ROLES    AGE   VERSION
+ip-10-0-1-123.eu-west-3.compute.internal      Ready    <none>   5m    v1.31.x
+ip-10-0-2-234.eu-west-3.compute.internal      Ready    <none>   5m    v1.31.x
+```
+
+### **3.2 Vérifier External Secrets Operator**
 
 ```bash
-# Créer le namespace
-kubectl create namespace traefik
+kubectl get pods -n external-secrets-system
+```
 
-# Installer Traefik avec Helm
-helm repo add traefik https://traefik.github.io/charts
+**Expected output :**
+```
+NAME                                                READY   STATUS    
+external-secrets-xxx                                1/1     Running
+external-secrets-cert-controller-xxx                1/1     Running
+external-secrets-webhook-xxx                        1/1     Running
+```
+
+Si pas installé :
+
+```bash
+helm repo add external-secrets https://charts.external-secrets.io
 helm repo update
 
-helm install traefik traefik/traefik \
-  --namespace traefik \
-  --set service.type=NodePort \
-  --set ports.web.nodePort=30080 \
-  --set ports.websecure.nodePort=30443 \
-  --set ports.web.exposedPort=80 \
-  --set ports.websecure.exposedPort=443
-
-# Vérifier
-kubectl get svc -n traefik
-kubectl get pods -n traefik
+helm install external-secrets external-secrets/external-secrets \
+  -n external-secrets-system \
+  --create-namespace
 ```
 
-### Étape 4 : Récupérer les credentials de la base de données
+### **3.3 Créer le SecretStore**
 
-```bash
-# Voir le secret créé par Terraform
-kubectl get secret database-credentials -o yaml
-
-# Décoder la DATABASE_URL
-kubectl get secret database-credentials \
-  -o jsonpath='{.data.DATABASE_URL}' | base64 -d
-
-# Export pour utilisation
-export DATABASE_URL=$(kubectl get secret database-credentials \
-  -o jsonpath='{.data.DATABASE_URL}' | base64 -d)
-
-echo $DATABASE_URL
-```
-
-### Étape 5 : Mettre à jour les values
-
-Éditez `overlays/aws-dev/values.yaml` et remplacez :
+Créez `k8s/secret-store.yaml` :
 
 ```yaml
-frontend:
-  env:
-    NEXT_PUBLIC_API_BASE: "https://api.leotest.abrdns.com"  # ✅ URL de l'ALB
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: aws-secrets-store
+  namespace: dev
+spec:
+  provider:
+    aws:
+      service: SecretsManager
+      region: eu-west-3
+      auth:
+        jwt:
+          serviceAccountRef:
+            name: default
 ```
 
-### Étape 6 : Déployer l'application
+Appliquez :
 
 ```bash
-# Depuis la racine du projet
-cd ../
-
-# Créer le namespace
 kubectl create namespace dev
+kubectl apply -f k8s/secret-store.yaml
+```
 
-# Rebuild les dépendances
+### **3.4 Créer l'ExternalSecret**
+
+Créez `k8s/external-secret.yaml` :
+
+```yaml
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: database-credentials
+  namespace: dev
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: aws-secrets-store
+    kind: SecretStore
+  target:
+    name: database-credentials
+    creationPolicy: Owner
+  dataFrom:
+    - extract:
+        key: microservices-platform-dev-secrets
+```
+
+Appliquez :
+
+```bash
+kubectl apply -f k8s/external-secret.yaml
+```
+
+### **3.5 Vérifier le secret Kubernetes**
+
+```bash
+kubectl get externalsecret -n dev
+kubectl get secret database-credentials -n dev -o yaml
+```
+
+---
+
+## 🚢 Étape 4 : Déploiement Application
+
+### **4.1 Créer les Helm values pour AWS**
+
+Créez `overlays/aws/values.yaml` :
+
+```yaml
+global:
+  useExternalSecrets: true
+  imageRegistry: docker.io
+  environment: dev
+  
+  # Base de données RDS (récupérer depuis terraform output)
+  database:
+    host: microservices-platform-dev-db.cvrhlcdjhuda.eu-west-3.rds.amazonaws.com
+    port: "5432"
+    name: microservices
+    user: postgres
+
+# Auth Service
+auth:
+  image:
+    repository: leogrv22/auth
+    tag: dev
+    pullPolicy: Always
+  
+  service:
+    type: ClusterIP  # Plus de NodePort, on passe par l'ALB
+    port: 80
+    targetPort: 8000
+  
+  ingress:
+    enabled: false
+
+# Users Service
+users:
+  image:
+    repository: leogrv22/users
+    tag: dev
+    pullPolicy: Always
+  
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8000
+  
+  ingress:
+    enabled: false
+
+# Items Service
+items:
+  image:
+    repository: leogrv22/items
+    tag: dev
+    pullPolicy: Always
+  
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8000
+  
+  ingress:
+    enabled: false
+
+# Frontend
+frontend:
+  image:
+    repository: leogrv22/frontend
+    tag: dev
+    pullPolicy: Always
+  
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 3000
+  
+  env:
+    # URL de l'ALB (ou domaine si configuré)
+    NEXT_PUBLIC_API_BASE: "http://microservices-p-dev-alb-XXXXX.eu-west-3.elb.amazonaws.com"
+  
+  ingress:
+    enabled: false
+
+# Désactiver PostgreSQL (on utilise RDS)
+postgresql:
+  enabled: false
+```
+
+**⚠️ Remplacez :**
+- `database.host` par l'output Terraform `rds_endpoint`
+- `frontend.env.NEXT_PUBLIC_API_BASE` par l'output `alb_dns_name`
+
+### **4.2 Modifier les deployments pour utiliser External Secrets**
+
+Dans chaque subchart (`helm/auth/`, `helm/users/`, `helm/items/`), modifiez `templates/deployment.yaml` :
+
+**Remplacez la section `envFrom` :**
+
+```yaml
+# Avant
+envFrom:
+  - secretRef:
+      name: {{ include "auth.fullname" . }}-secret
+
+# Après
+envFrom:
+  {{- if .Values.global.useExternalSecrets }}
+  - secretRef:
+      name: database-credentials  # Secret créé par External Secrets Operator
+  {{- else }}
+  - configMapRef:
+      name: {{ include "auth.fullname" . }}-config
+  - secretRef:
+      name: {{ include "auth.fullname" . }}-secret
+  {{- end }}
+```
+
+### **4.3 Update Helm dependencies**
+
+```bash
 cd helm/platform
 helm dependency update
+```
 
-# Déployer
+### **4.4 Déployer l'application**
+
+```bash
 helm upgrade --install platform . \
-  -f ../../overlays/aws-dev/values.yaml \
+  -f ../../overlays/aws/values.yaml \
   -n dev \
+  --create-namespace \
   --wait
+```
 
-# Vérifier
+### **4.5 Patcher les services en NodePort (pour ALB)**
+
+Les services doivent être exposés en NodePort pour que l'ALB puisse les atteindre :
+
+```bash
+# Auth
+kubectl patch svc platform-auth -n dev -p '{"spec":{"type":"NodePort","ports":[{"port":80,"targetPort":8000,"nodePort":30081}]}}'
+
+# Users
+kubectl patch svc platform-users -n dev -p '{"spec":{"type":"NodePort","ports":[{"port":80,"targetPort":8000,"nodePort":30082}]}}'
+
+# Items
+kubectl patch svc platform-items -n dev -p '{"spec":{"type":"NodePort","ports":[{"port":80,"targetPort":8000,"nodePort":30083}]}}'
+
+# Frontend
+kubectl patch svc platform-frontend -n dev -p '{"spec":{"type":"NodePort","ports":[{"port":80,"targetPort":3000,"nodePort":30080}]}}'
+```
+
+---
+
+## ✅ Étape 5 : Vérification
+
+### **5.1 Vérifier les pods**
+
+```bash
 kubectl get pods -n dev
+```
+
+**Tous les pods doivent être `Running` :**
+
+```
+NAME                                READY   STATUS    RESTARTS   AGE
+platform-auth-xxx                   1/1     Running   0          2m
+platform-users-xxx                  1/1     Running   0          2m
+platform-items-xxx                  1/1     Running   0          2m
+platform-frontend-xxx               1/1     Running   0          2m
+```
+
+### **5.2 Vérifier les services**
+
+```bash
 kubectl get svc -n dev
-kubectl get ingress -n dev
 ```
 
-### Étape 7 : Vérifier les logs
+**Tous doivent être en NodePort :**
 
-```bash
-# Logs Traefik
-kubectl logs -n traefik -l app.kubernetes.io/name=traefik -f
-
-# Logs Auth
-kubectl logs -n dev -l app.kubernetes.io/name=auth -f
-
-# Logs Frontend
-kubectl logs -n dev -l app.kubernetes.io/name=frontend -f
+```
+NAME                TYPE       CLUSTER-IP      PORT(S)
+platform-auth       NodePort   10.43.x.x       80:30081/TCP
+platform-users      NodePort   10.43.x.x       80:30082/TCP
+platform-items      NodePort   10.43.x.x       80:30083/TCP
+platform-frontend   NodePort   10.43.x.x       80:30080/TCP
 ```
 
-### Étape 8 : Tester l'application
+### **5.3 Tester la connexion RDS**
 
 ```bash
-# Attendre que le DNS se propage (5-10 minutes)
-dig api.leotest.abrdns.com
-dig app.leotest.abrdns.com
+# Depuis un pod
+kubectl run psql-test --rm -it --image=postgres:17 -- \
+  psql "$(kubectl get secret database-credentials -n dev -o jsonpath='{.data.DATABASE_URL}' | base64 -d)"
 
-# Tester l'API
-curl https://api.leotest.abrdns.com/auth/health
+# Dans psql
+\l  # Lister les databases
+\dt # Lister les tables
+\q  # Quitter
+```
 
-# Tester le login
-curl -X POST https://api.leotest.abrdns.com/auth/api/v1/login/access-token \
-  -d "username=admin@test.com&password=Test123!"
+### **5.4 Créer l'utilisateur de test**
+
+```bash
+kubectl exec -it -n dev $(kubectl get pod -n dev -l app.kubernetes.io/name=auth -o jsonpath='{.items[0].metadata.name}') -- python3
+
+# Dans Python
+from app.core.security import get_password_hash
+from app.models import User
+from app.core.db import engine
+from sqlmodel import Session
+
+with Session(engine) as session:
+    user = User(
+        email="admin@test.com",
+        hashed_password=get_password_hash("Test123!"),
+        full_name="Admin User",
+        is_active=True,
+        is_superuser=True
+    )
+    session.add(user)
+    session.commit()
+    print("✅ User created!")
+```
+
+### **5.5 Tester l'API via l'ALB**
+
+```bash
+# Récupérer l'URL de l'ALB
+ALB_URL=$(terraform output -raw alb_dns_name)
 
 # Tester le frontend
-curl https://app.leotest.abrdns.com
+curl http://$ALB_URL/
+
+# Tester l'API auth
+curl http://$ALB_URL:30081/docs
+
+# Tester le login
+curl -X POST "http://$ALB_URL:30081/api/v1/login/access-token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=admin@test.com&password=Test123!"
 ```
 
-## 🔧 Troubleshooting
+### **5.6 Accéder depuis le navigateur**
 
-### Problème : Pods ne peuvent pas se connecter à RDS
+Ouvrez dans votre navigateur :
+
+```
+http://ALB_DNS_NAME:30080/
+```
+
+Connectez-vous avec :
+- **Email :** admin@test.com
+- **Password :** Test123!
+
+---
+
+## 🔄 Différences k3s vs EKS
+
+### **Configuration Helm**
+
+**k3s (`overlays/dev/values.yaml`) :**
+```yaml
+global:
+  useExternalSecrets: false
+  database:
+    host: postgres-postgresql.dev.svc.cluster.local
+
+auth:
+  service:
+    type: NodePort
+    nodePort: 30081
+
+postgresql:
+  enabled: true  # Pod PostgreSQL
+```
+
+**EKS (`overlays/aws/values.yaml`) :**
+```yaml
+global:
+  useExternalSecrets: true  # AWS Secrets Manager
+  database:
+    host: xxx.rds.amazonaws.com  # RDS
+
+auth:
+  service:
+    type: ClusterIP  # Exposé via ALB
+
+postgresql:
+  enabled: false  # Utilise RDS
+```
+
+### **Secrets Management**
+
+**k3s :**
+- Secrets Kubernetes classiques
+- Mot de passe en clair dans values.yaml
+
+**EKS :**
+- AWS Secrets Manager
+- External Secrets Operator
+- IAM Roles pour accès sécurisé
+
+### **Networking**
+
+**k3s :**
+```
+Internet → VM IP:30080 → Traefik → Services
+```
+
+**EKS :**
+```
+Internet → ALB:80 → NodePort 30080 → Traefik → Services
+```
+
+---
+
+## 🐛 Troubleshooting
+
+### **Problème : Pods en CrashLoopBackOff**
 
 ```bash
-# Vérifier le secret
-kubectl get secret database-credentials -o yaml
+# Voir les logs
+kubectl logs -n dev POD_NAME
 
-# Vérifier les security groups
-aws ec2 describe-security-groups \
-  --filters "Name=group-name,Values=*rds*"
-
-# Tester la connexion depuis un pod
-kubectl run psql-test --rm -it --image=postgres:15 -- \
-  psql "postgresql://admin:PASSWORD@RDS_ENDPOINT:5432/microservices_dev"
+# Souvent c'est un problème de connexion DB
+kubectl describe pod -n dev POD_NAME
 ```
 
-### Problème : ALB ne route pas vers Traefik
+**Solutions :**
+- Vérifier que le secret `database-credentials` existe
+- Vérifier les Security Groups RDS (doit autoriser EKS nodes)
+- Vérifier le RDS endpoint dans les values
+
+### **Problème : ALB ne route pas vers les services**
 
 ```bash
 # Vérifier le Target Group health
 aws elbv2 describe-target-health \
-  --target-group-arn $(terraform output -raw alb_target_group_arn)
-
-# Vérifier que Traefik écoute sur 30080
-kubectl get svc -n traefik
-kubectl port-forward -n traefik svc/traefik 30080:80
-
-# Tester depuis un node
-kubectl get nodes -o wide
-ssh ec2-user@<node-ip>
-curl localhost:30080/ping
+  --target-group-arn $(aws elbv2 describe-target-groups \
+    --names microservices-p-dev-trf \
+    --query 'TargetGroups[0].TargetGroupArn' \
+    --output text)
 ```
 
-### Problème : Certificat SSL non validé
+**Solutions :**
+- Vérifier que les services sont en NodePort
+- Vérifier les Security Groups (EKS nodes doivent accepter du ALB)
+- Vérifier que les pods sont Running
+
+### **Problème : External Secrets ne synchronise pas**
 
 ```bash
-# Vérifier le certificat
-aws acm describe-certificate \
-  --certificate-arn $(terraform output -raw acm_certificate_arn)
-
-# Vérifier les DNS records
-aws route53 list-resource-record-sets \
-  --hosted-zone-id $(terraform output -raw route53_zone_id)
+kubectl get externalsecret -n dev
+kubectl describe externalsecret database-credentials -n dev
 ```
 
-## 📊 Comparaison K3s vs EKS
+**Solutions :**
+- Vérifier que le SecretStore existe
+- Vérifier les IAM permissions des nodes
+- Vérifier le nom du secret dans AWS Secrets Manager
 
-| Aspect | K3s (VM) | EKS (AWS) |
-|--------|----------|-----------|
-| Database | Pod PostgreSQL | RDS PostgreSQL Multi-AZ |
-| Load Balancer | Traefik direct | ALB → Traefik |
-| SSL | Manual/Let's Encrypt | Certificate Manager |
-| DNS | IP publique | Route53 |
-| Haute dispo | ❌ Single VM | ✅ Multi-AZ |
-| Scaling | ❌ Manual | ✅ Auto-scaling |
-| Backup | ❌ Manual | ✅ Automated |
-| Coût | ~$10/mo | ~$260/mo |
+### **Problème : RDS inaccessible**
 
-## ✅ Checklist de migration
+```bash
+# Tester la résolution DNS
+kubectl run -it --rm debug --image=busybox -- nslookup microservices-platform-dev-db.xxx.rds.amazonaws.com
 
-- [ ] Infrastructure Terraform déployée
-- [ ] kubectl configuré
-- [ ] Traefik installé sur EKS
-- [ ] Secret database-credentials vérifié
-- [ ] Values mis à jour avec les URLs AWS
-- [ ] Application déployée avec Helm
-- [ ] Pods running
-- [ ] Ingress créés
-- [ ] DNS propagé
-- [ ] Certificat SSL validé
-- [ ] API testée
-- [ ] Frontend testé
-- [ ] Logs vérifiés
+# Tester la connexion
+kubectl run -it --rm psql --image=postgres:17 -- \
+  psql -h RDS_ENDPOINT -U postgres -d microservices
+```
 
-## 🎯 Next Steps
-
-1. Configurer le monitoring (CloudWatch, Prometheus)
-2. Mettre en place le CI/CD (GitHub Actions → ECR → EKS)
-3. Configurer les alertes
-4. Documenter les runbooks
-5. Tester le disaster recovery
+**Solutions :**
+- Vérifier le Security Group RDS
+- Vérifier que RDS est dans les bons subnets
+- Vérifier les credentials
 
 ---
 
-**Prêt pour la production !** 🚀
+## ✅ Checklist de migration
+
+- [ ] Secret AWS Secrets Manager créé
+- [ ] Infrastructure Terraform déployée (~40 min)
+- [ ] kubectl configuré pour EKS
+- [ ] External Secrets Operator vérifié
+- [ ] SecretStore créé
+- [ ] ExternalSecret créé
+- [ ] Secret Kubernetes synchronisé
+- [ ] Helm values AWS créés
+- [ ] Deployments modifiés pour External Secrets
+- [ ] Application déployée avec Helm
+- [ ] Services patchés en NodePort
+- [ ] Pods tous Running
+- [ ] Connexion RDS testée
+- [ ] Utilisateur test créé
+- [ ] API testée via ALB
+- [ ] Frontend accessible
+
+---
+
+## 🎉 Prochaines étapes
+
+1. **Configurer un domaine** (Route53 + ACM Certificate)
+2. **Activer HTTPS** (ALB Listener HTTPS)
+3. **Setup monitoring** (CloudWatch, Prometheus/Grafana)
+4. **Configurer CI/CD** (GitHub Actions → ECR → EKS)
+5. **Backup automatisés** (RDS snapshots)
+6. **Disaster Recovery plan**
+
+---
+
+**Migration terminée ! Votre application tourne maintenant sur AWS EKS ! 🚀**

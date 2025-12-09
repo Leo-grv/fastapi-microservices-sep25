@@ -114,25 +114,25 @@ output "alb_arn" {
 # ROUTE53 & DOMAIN OUTPUTS
 # ============================================================================
 
-output "route53_zone_id" {
-  description = "ID de la zone Route53"
-  value       = local.route53_zone_id
-}
+#output "route53_zone_id" {
+#  description = "ID de la zone Route53"
+#  value       = local.route53_zone_id
+#}
 
-output "api_domain" {
-  description = "Domaine de l'API"
-  value       = "https://api.${var.domain_name}"
-}
+#output "api_domain" {
+#  description = "Domaine de l'API"
+#  value       = "https://api.${var.domain_name}"
+#}
 
-output "app_domain" {
-  description = "Domaine de l'application frontend"
-  value       = "https://app.${var.domain_name}"
-}
+#output "app_domain" {
+#  description = "Domaine de l'application frontend"
+#"  value       = "https://app.${var.domain_name}"
+#}
 
-output "root_domain" {
-  description = "Domaine racine"
-  value       = "https://${var.domain_name}"
-}
+#output "root_domain" {
+#  description = "Domaine racine"
+#  value       = "https://${var.domain_name}"
+#}
 
 # ============================================================================
 # CERTIFICATE OUTPUTS

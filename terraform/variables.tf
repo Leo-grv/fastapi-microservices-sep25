@@ -104,7 +104,7 @@ variable "rds_allocated_storage" {
 variable "rds_engine_version" {
   description = "Version de PostgreSQL"
   type        = string
-  default     = "16.4"
+  default     = "17.2"
 }
 
 variable "rds_database_name" {
@@ -116,7 +116,7 @@ variable "rds_database_name" {
 variable "rds_master_username" {
   description = "Username master RDS"
   type        = string
-  default     = "admin"
+  default     = "dbadmin"
   sensitive   = true
 }
 

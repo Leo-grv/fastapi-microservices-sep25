@@ -1,605 +1,723 @@
-# 🚀 Microservices Platform - FastAPI sur AWS EKS
+# 🚀 FastAPI Microservices Platform
 
-[![AWS](https://img.shields.io/badge/AWS-EKS-orange?logo=amazon-aws)](https://aws.amazon.com/)
-[![Kubernetes](https://img.shields.io/badge/Kubernetes-1.28-blue?logo=kubernetes)](https://kubernetes.io/)
-[![Terraform](https://img.shields.io/badge/Terraform-Infrastructure-purple?logo=terraform)](https://terraform.io/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-blue?logo=postgresql)](https://postgresql.org/)
+Plateforme de microservices moderne construite avec **FastAPI**, **Next.js**, et **Kubernetes**.
 
-## 📋 Vue d'ensemble
+Déployable sur **k3s (local)** ou **AWS EKS (production)**.
 
-Plateforme de microservices moderne déployée sur AWS avec Kubernetes (EKS), incluant :
-- **Architecture microservices** : Services Auth, Users, Items, Frontend
-- **Infrastructure as Code** : 100% géré avec Terraform
-- **Haute disponibilité** : Multi-AZ sur 2 zones de disponibilité (eu-west-3)
-- **Sécurité** : Subnets privés, Security Groups, encryption at-rest
-- **Scalabilité** : Auto-scaling EKS (2-3 nodes), RDS Multi-AZ en PROD
-- **CI/CD Ready** : Images Docker sur Docker Hub
+---
+
+## 📋 Table des matières
+
+- [Stack Technique](#-stack-technique)
+- [Architecture](#-architecture)
+- [Prérequis](#-prérequis)
+- [Installation Locale (k3s)](#-installation-locale-k3s)
+- [Déploiement AWS (EKS)](#-déploiement-aws-eks)
+- [Utilisation](#-utilisation)
+- [Développement](#-développement)
+- [Documentation](#-documentation)
+
+---
+
+## 🛠️ Stack Technique
+
+### **Backend**
+- **FastAPI** 0.115+ - API REST moderne et performante
+- **SQLModel** - ORM basé sur SQLAlchemy 2.0
+- **PostgreSQL** 17 - Base de données relationnelle
+- **JWT** - Authentication avec bcrypt
+- **Pydantic** - Validation de données
+
+### **Frontend**
+- **Next.js** 14 - Framework React
+- **Tailwind CSS** - Styling
+- **Axios** - HTTP client
+- **TypeScript** - Type safety
+
+### **Infrastructure**
+- **Docker** - Containerization
+- **Kubernetes** - Orchestration (k3s local / EKS production)
+- **Helm** - Package manager Kubernetes
+- **Terraform** - Infrastructure as Code
+- **Traefik** - Ingress controller
+
+### **AWS Services (Production)**
+- **EKS** - Managed Kubernetes
+- **RDS** - Managed PostgreSQL
+- **ALB** - Application Load Balancer
+- **Secrets Manager** - Gestion des secrets
+- **Route53** - DNS management
+- **ACM** - SSL certificates
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-Internet (HTTPS)
-    │
-    ├─── Route53 DNS (leotest.abrdns.com)
-    │    ├─── api.leotest.abrdns.com → ALB
-    │    ├─── app.leotest.abrdns.com → ALB
-    │    └─── leotest.abrdns.com → ALB (root)
-    │
-    ▼
-Application Load Balancer (Port 80/443)
-    │
-    ├─── Target Group (Traefik NodePort 30080)
-    │
-    ▼
-VPC 10.0.0.0/16 - Multi-AZ (eu-west-3a, eu-west-3b)
-    │
-    ├─── Public Subnets (2 AZ)
-    │    ├─── 10.0.1.0/24  (AZ-1) + NAT Gateway 1
-    │    └─── 10.0.10.0/24 (AZ-2) + NAT Gateway 2
-    │
-    ├─── Private Subnets EKS (2 AZ)
-    │    ├─── 10.0.2.0/24  (AZ-1) - EKS Worker Nodes
-    │    └─── 10.0.20.0/24 (AZ-2) - EKS Worker Nodes
-    │         │
-    │         └─── EKS Cluster 1.28
-    │              ├─── Traefik Ingress Controller (NodePort 30080)
-    │              ├─── Auth Service (FastAPI - Port 8000)
-    │              ├─── Users Service (FastAPI - Port 8000)
-    │              ├─── Items Service (FastAPI - Port 8000)
-    │              └─── Frontend (React - Port 3000)
-    │
-    └─── Private Subnets RDS (2 AZ)
-         ├─── 10.0.3.0/24  (AZ-1) - RDS Primary
-         └─── 10.0.30.0/24 (AZ-2) - RDS Standby (PROD only)
-              │
-              └─── PostgreSQL 15 (db.t3.small)
-                   ├─── Database: microservices_dev
-                   ├─── Port: 5432
-                   └─── Storage: 20GB GP3 (encrypted)
+┌─────────────────────────────────────────────────────┐
+│                    CLIENTS                          │
+└────────────────┬────────────────────────────────────┘
+                 │
+                 ▼
+         ┌───────────────┐
+         │  ALB / Traefik│
+         └───────┬───────┘
+                 │
+     ┌───────────┼───────────┐
+     ▼           ▼           ▼
+┌─────────┐ ┌─────────┐ ┌─────────┐
+│  Auth   │ │  Users  │ │  Items  │
+│ Service │ │ Service │ │ Service │
+└────┬────┘ └────┬────┘ └────┬────┘
+     │           │           │
+     └───────────┴───────────┘
+                 │
+                 ▼
+         ┌──────────────┐
+         │  PostgreSQL  │
+         │  (RDS / Pod) │
+         └──────────────┘
 ```
+
+**Voir [ARCHITECTURE.md](./ARCHITECTURE.md) pour plus de détails.**
 
 ---
 
-## 🎯 Composants
+## 📦 Prérequis
 
-### 🔐 **Auth Service**
-- **Rôle** : Authentification JWT, gestion des utilisateurs
-- **Tech** : FastAPI + SQLAlchemy + PostgreSQL
-- **Endpoints** :
-  - `POST /api/v1/login/access-token` - Login
-  - `POST /api/v1/users/` - Register
-  - `GET /api/v1/auth/verify` - Verify token (Traefik ForwardAuth)
-- **Image** : `leogrv22/auth:dev`
-- **Port** : 8000
-
-### 👥 **Users Service**
-- **Rôle** : CRUD utilisateurs, profils
-- **Tech** : FastAPI + SQLAlchemy
-- **Endpoints** :
-  - `GET /api/v1/users/` - Liste des users
-  - `GET /api/v1/users/{id}` - User par ID
-  - `PUT /api/v1/users/{id}` - Update user
-  - `DELETE /api/v1/users/{id}` - Delete user
-- **Image** : `leogrv22/users:dev`
-- **Port** : 8000
-
-### 📦 **Items Service**
-- **Rôle** : Gestion des items/ressources
-- **Tech** : FastAPI + SQLAlchemy
-- **Endpoints** :
-  - `GET /api/v1/items/` - Liste des items
-  - `POST /api/v1/items/` - Create item
-  - `GET /api/v1/items/{id}` - Item par ID
-  - `PUT /api/v1/items/{id}` - Update item
-  - `DELETE /api/v1/items/{id}` - Delete item
-- **Image** : `leogrv22/items:dev`
-- **Port** : 8000
-
-### 🌐 **Frontend**
-- **Rôle** : Interface utilisateur web
-- **Tech** : React.js / Next.js
-- **Features** : Dashboard, Login, User Management
-- **Image** : `leogrv22/frontend:dev`
-- **Port** : 3000
-
-### 🔀 **Traefik Ingress**
-- **Rôle** : Reverse proxy, routing, SSL termination
-- **Config** : NodePort 30080/30443
-- **Features** : Path-based routing, middleware, ForwardAuth
-
-### 🗄️ **PostgreSQL RDS**
-- **Version** : 15.4
-- **Instance** : db.t3.small (2 vCPU, 2 GB RAM)
-- **Storage** : 20 GB GP3 (encrypted)
-- **Backup** : 1 day retention (DEV), 7 days (PROD)
-- **Multi-AZ** : Disabled (DEV), Enabled (PROD)
-
----
-
-## 🛠️ Prérequis
-
-### Outils nécessaires
+### **Pour déploiement local (k3s)**
 
 ```bash
-# AWS CLI (>= 2.0)
-aws --version
+# Outils requis
+- Docker 24+
+- kubectl 1.28+
+- Helm 3.12+
+- k3s ou k3d
 
-# Terraform (>= 1.0)
-terraform version
-
-# kubectl (>= 1.28)
-kubectl version --client
-
-# Helm (>= 3.0)
-helm version
-
-# Docker (>= 20.10)
-docker --version
+# Ressources recommandées
+- 2 vCPU
+- 4 GB RAM
+- 20 GB disque
 ```
 
-### Configuration AWS
+### **Pour déploiement AWS (EKS)**
 
 ```bash
-# Configurer AWS CLI
+# Outils requis
+- AWS CLI 2.x
+- Terraform 1.5+
+- kubectl 1.28+
+- Helm 3.12+
+
+# Compte AWS configuré
 aws configure
-# AWS Access Key ID: AKIAXXXXX
-# AWS Secret Access Key: xxxxxx
-# Default region: eu-west-3
-# Default output format: json
-
-# Vérifier l'accès
-aws sts get-caller-identity
 ```
 
 ---
 
-## 🚀 Déploiement
+## 🏠 Installation Locale (k3s)
 
-### 1️⃣ Cloner le projet
+### **1. Cloner le projet**
 
 ```bash
-git clone https://github.com/your-org/microservices-platform.git
-cd microservices-platform
+git clone https://github.com/votre-repo/fastapi-microservices-platform.git
+cd fastapi-microservices-platform
 ```
 
-### 2️⃣ Structure du projet
+---
 
-```
-microservices-platform/
-├── terraform/                  # Infrastructure as Code
-│   ├── main.tf                # Configuration principale
-│   ├── vpc.tf                 # VPC, Subnets, NAT, IGW
-│   ├── security-groups.tf     # Security Groups
-│   ├── iam.tf                 # IAM Roles et Policies
-│   ├── eks.tf                 # Cluster EKS
-│   ├── rds.tf                 # PostgreSQL RDS
-│   ├── alb.tf                 # Application Load Balancer
-│   ├── route53.tf             # DNS et SSL Certificate
-│   ├── s3.tf                  # S3 Buckets
-│   ├── outputs.tf             # Outputs Terraform
-│   ├── variables.tf           # Variables definition
-│   ├── terraform.tfvars.dev   # Variables DEV
-│   └── terraform.tfvars.prod  # Variables PROD
-│
-├── Microservices/             # Code des microservices
-│   ├── auth/                  # Service d'authentification
-│   │   ├── app/
-│   │   ├── Dockerfile
-│   │   └── requirements.txt
-│   ├── users/                 # Service utilisateurs
-│   ├── items/                 # Service items
-│   └── frontend/              # Frontend React
-│
-├── helm/                      # Charts Helm
-│   ├── platform/              # Chart umbrella
-│   │   ├── Chart.yaml
-│   │   ├── values.yaml
-│   │   └── templates/
-│   ├── auth/                  # Chart Auth
-│   ├── users/                 # Chart Users
-│   └── items/                 # Chart Items
-│
-└── overlays/                  # Configurations par environnement
-    ├── dev/
-    │   └── values.yaml
-    ├── staging/
-    │   └── values.yaml
-    └── prod/
-        └── values.yaml
+### **2. Installer k3s (si pas déjà fait)**
+
+**Sur Linux/Ubuntu :**
+```bash
+curl -sfL https://get.k3s.io | sh -
+sudo chmod 644 /etc/rancher/k3s/k3s.yaml
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 ```
 
-### 3️⃣ Déployer l'infrastructure Terraform
+**Ou avec k3d (Docker) :**
+```bash
+k3d cluster create dev --agents 1 --port "30080:30080@agent:0"
+```
+
+---
+
+### **3. Construire les images Docker**
+
+```bash
+# Auth service
+cd Microservices/auth
+docker build -t leogrv22/auth:dev .
+docker push leogrv22/auth:dev
+
+# Users service
+cd ../users
+docker build -t leogrv22/users:dev .
+docker push leogrv22/users:dev
+
+# Items service
+cd ../items
+docker build -t leogrv22/items:dev .
+docker push leogrv22/items:dev
+
+# Frontend
+cd ../../frontend
+docker build -t leogrv22/frontend:dev .
+docker push leogrv22/frontend:dev
+```
+
+---
+
+### **4. Configurer les variables**
+
+Éditez `overlays/dev/values.yaml` :
+
+```yaml
+global:
+  useExternalSecrets: false
+  
+  database:
+    host: postgres-postgresql.dev.svc.cluster.local
+    port: "5432"
+    name: postgres
+    user: postgres
+    password: postgres  # Changez en production !
+
+auth:
+  image:
+    tag: dev
+    pullPolicy: Always
+  service:
+    type: NodePort
+    nodePort: 30081
+
+# ... (voir le fichier complet)
+```
+
+---
+
+### **5. Déployer avec Helm**
+
+```bash
+# Créer le namespace
+kubectl create namespace dev
+
+# Update dependencies
+cd helm/platform
+helm dependency update
+
+# Déployer
+helm upgrade --install platform . \
+  -f ../../overlays/dev/values.yaml \
+  -n dev \
+  --wait
+```
+
+---
+
+### **6. Vérifier le déploiement**
+
+```bash
+# Vérifier les pods
+kubectl get pods -n dev
+
+# Attendre que tous les pods soient Running
+kubectl get pods -n dev -w
+
+# Vérifier les services
+kubectl get svc -n dev
+```
+
+---
+
+### **7. Créer un utilisateur de test**
+
+```bash
+# Se connecter au pod auth
+kubectl exec -it -n dev $(kubectl get pod -n dev -l app.kubernetes.io/name=auth -o jsonpath='{.items[0].metadata.name}') -- bash
+
+# Dans le pod, lancer Python
+python3
+
+# Créer l'utilisateur
+from app.core.security import get_password_hash
+from app.models import User
+from app.core.db import engine
+from sqlmodel import Session, select
+
+with Session(engine) as session:
+    # Vérifier si l'utilisateur existe
+    user = session.exec(select(User).where(User.email == "admin@test.com")).first()
+    
+    if not user:
+        user = User(
+            email="admin@test.com",
+            hashed_password=get_password_hash("Test123!"),
+            full_name="Admin User",
+            is_active=True,
+            is_superuser=True
+        )
+        session.add(user)
+        session.commit()
+        print("✅ User created!")
+    else:
+        print("ℹ️ User already exists")
+```
+
+---
+
+### **8. Accéder à l'application**
+
+**Récupérer l'IP de votre VM :**
+```bash
+# Sur la VM
+hostname -I | awk '{print $1}'
+# Exemple: 54.195.141.244
+```
+
+**URLs :**
+- Frontend : `http://YOUR_IP:30080/`
+- Auth API : `http://YOUR_IP:30081/docs`
+- Users API : `http://YOUR_IP:30082/docs`
+- Items API : `http://YOUR_IP:30083/docs`
+
+**Credentials par défaut :**
+- Email : `admin@test.com`
+- Password : `Test123!`
+
+---
+
+## ☁️ Déploiement AWS (EKS)
+
+### **1. Configurer AWS CLI**
+
+```bash
+aws configure
+# AWS Access Key ID: VOTRE_ACCESS_KEY
+# AWS Secret Access Key: VOTRE_SECRET_KEY
+# Default region name: eu-west-3
+```
+
+---
+
+### **2. Créer le secret dans AWS Secrets Manager**
+
+```bash
+aws secretsmanager create-secret \
+  --name microservices-platform-dev-secrets \
+  --description "Application secrets for dev environment" \
+  --secret-string '{
+    "rds_master_password": "VotreMotDePasseSecure123!",
+    "app_secret_key": "votre-secret-key-random-change-me"
+  }' \
+  --region eu-west-3
+```
+
+---
+
+### **3. Déployer l'infrastructure Terraform**
 
 ```bash
 cd terraform/
 
-# Copier le fichier de variables pour DEV
-cp terraform.tfvars.dev terraform.tfvars
-
-# ⚠️ IMPORTANT : Éditer terraform.tfvars et changer les secrets
-nano terraform.tfvars
-```
-
-**Variables à modifier OBLIGATOIREMENT** :
-```hcl
-# Mot de passe RDS (minimum 16 caractères)
-rds_master_password = "VotreSuperMotDePasseSecurise123!"
-
-# Secret key pour JWT (minimum 32 caractères)
-app_secret_key = "votre-secret-key-tres-longue-et-aleatoire-123456789"
-```
-
-```bash
 # Initialiser Terraform
 terraform init
 
-# Planifier (vérifier ce qui sera créé)
+# Voir le plan
 terraform plan
 
-# Déployer (durée : 15-20 minutes)
+# Déployer (⏳ ~30-40 minutes)
 terraform apply
-# Confirmer avec : yes
 ```
 
-### 4️⃣ Configurer kubectl
+**Terraform va créer :**
+- VPC avec subnets publics/privés
+- EKS Cluster + Node Groups
+- RDS PostgreSQL Multi-AZ
+- Application Load Balancer
+- Security Groups
+- IAM Roles
+
+---
+
+### **4. Configurer kubectl**
 
 ```bash
-# Récupérer la commande depuis les outputs
+# Récupérer la commande depuis Terraform
 terraform output configure_kubectl
 
-# Exécuter la commande
-aws eks update-kubeconfig --region eu-west-3 --name microser-dev
+# Exécuter
+aws eks update-kubeconfig --region eu-west-3 --name microservi-dev
 
-# Vérifier les nodes
+# Vérifier la connexion
 kubectl get nodes
 ```
 
-### 5️⃣ Déployer Traefik
+---
+
+### **5. Vérifier External Secrets Operator**
 
 ```bash
-# Ajouter le repo Helm
-helm repo add traefik https://traefik.github.io/charts
-helm repo update
-
-# Créer le namespace
-kubectl create namespace traefik
-
-# Installer Traefik avec NodePort 30080
-helm install traefik traefik/traefik \
-  --namespace traefik \
-  --set service.type=NodePort \
-  --set ports.web.nodePort=30080 \
-  --set ports.websecure.nodePort=30443
-
-# Vérifier le déploiement
-kubectl get svc -n traefik
-kubectl get pods -n traefik
+kubectl get pods -n external-secrets-system
 ```
 
-### 6️⃣ Déployer les microservices
+Si pas installé :
+```bash
+helm repo add external-secrets https://charts.external-secrets.io
+helm install external-secrets external-secrets/external-secrets \
+  -n external-secrets-system \
+  --create-namespace
+```
+
+---
+
+### **6. Créer le namespace**
 
 ```bash
-# Retour à la racine du projet
-cd ..
-
-# Créer le namespace
 kubectl create namespace dev
+```
 
-# Éditer les values avec les nouvelles URLs
-nano overlays/dev/values.yaml
+---
 
-# Déployer avec Helm
+### **7. Adapter les Helm values pour AWS**
+
+Créez `overlays/aws/values.yaml` :
+
+```yaml
+global:
+  useExternalSecrets: true  # ← Utiliser AWS Secrets Manager
+  
+  database:
+    host: microservices-platform-dev-db.XXXXXX.eu-west-3.rds.amazonaws.com  # ← Depuis terraform output
+    port: "5432"
+    name: microservices
+    user: postgres
+
+auth:
+  image:
+    tag: dev
+    pullPolicy: Always
+  service:
+    type: ClusterIP  # ← Plus de NodePort
+
+users:
+  image:
+    tag: dev
+    pullPolicy: Always
+  service:
+    type: ClusterIP
+
+items:
+  image:
+    tag: dev
+    pullPolicy: Always
+  service:
+    type: ClusterIP
+
+frontend:
+  image:
+    tag: dev
+    pullPolicy: Always
+  service:
+    type: ClusterIP
+
+# Désactiver PostgreSQL (on utilise RDS)
+postgresql:
+  enabled: false
+```
+
+---
+
+### **8. Déployer l'application**
+
+```bash
 cd helm/platform
 helm dependency update
 
 helm upgrade --install platform . \
-  -f ../../overlays/dev/values.yaml \
-  -n dev
-
-# Vérifier le déploiement
-kubectl get pods -n dev
-kubectl get svc -n dev
-kubectl get ingress -n dev
-```
-
-### 7️⃣ Initialiser la base de données
-
-```bash
-# Se connecter au pod Auth
-kubectl exec -it -n dev $(kubectl get pod -n dev -l app=auth -o jsonpath='{.items[0].metadata.name}') -- bash
-
-# Créer un utilisateur admin (depuis le pod)
-python -c "
-from app.core.security import get_password_hash
-from app import crud, models
-from app.core.config import settings
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
-engine = create_engine(settings.DATABASE_URL)
-SessionLocal = sessionmaker(bind=engine)
-db = SessionLocal()
-
-user = models.User(
-    email='admin@test.com',
-    hashed_password=get_password_hash('Test123!'),
-    full_name='Admin User',
-    is_superuser=True,
-    is_active=True
-)
-db.add(user)
-db.commit()
-print('✅ Admin user created!')
-"
-```
-
-### 8️⃣ Tester l'application
-
-```bash
-# Attendre que le DNS se propage (5-10 minutes)
-# Récupérer l'URL de l'ALB
-terraform output alb_dns_name
-
-# Health check
-curl http://api.leotest.abrdns.com/health
-
-# Login
-curl -X POST http://api.leotest.abrdns.com/auth/api/v1/login/access-token \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=admin@test.com&password=Test123!"
-
-# Frontend
-curl http://app.leotest.abrdns.com
+  -f ../../overlays/aws/values.yaml \
+  -n dev \
+  --wait
 ```
 
 ---
 
-## 🔐 Sécurité
-
-### Security Groups
-
-| Composant | Ingress | Egress | Source |
-|-----------|---------|--------|--------|
-| **ALB** | 80, 443 | All | 0.0.0.0/0 |
-| **EKS Nodes** | 30000-32767, 80, 443 | All | ALB SG |
-| **RDS** | 5432 | All | EKS Nodes SG |
-
-### Secrets Management
+### **9. Vérifier le déploiement**
 
 ```bash
-# Récupérer la DATABASE_URL depuis Kubernetes
-kubectl get secret database-credentials -n default \
-  -o jsonpath='{.data.DATABASE_URL}' | base64 -d
-
-# Récupérer le mot de passe RDS
-terraform output -raw rds_password
-```
-
-### IAM Roles
-
-- **EKS Cluster Role** : Gestion du control plane
-- **EKS Node Role** : Permissions des worker nodes
-- **RDS Monitoring Role** : Enhanced monitoring
-
----
-
-## 📊 Monitoring
-
-### Logs CloudWatch
-
-```bash
-# Logs RDS
-aws logs tail /aws/rds/instance/microservices-platform-dev-db/postgresql --follow
-
-# Logs EKS
-kubectl logs -n dev -l app=auth --tail=100 -f
-```
-
-### Métriques
-
-```bash
-# Nodes EKS
-kubectl top nodes
-
 # Pods
-kubectl top pods -n dev
+kubectl get pods -n dev
 
 # Services
-kubectl get svc -n dev -o wide
+kubectl get svc -n dev
+
+# Ingress
+kubectl get ingress -n dev
+
+# Logs
+kubectl logs -n dev -l app.kubernetes.io/name=auth -f
 ```
 
 ---
 
-## 💰 Estimation des coûts
+### **10. Accéder à l'application**
 
-### Environnement DEV (sans Multi-AZ)
+**Récupérer l'URL de l'ALB :**
+```bash
+terraform output alb_dns_name
+# microservices-p-dev-alb-XXXXXXX.eu-west-3.elb.amazonaws.com
+```
 
-| Service | Configuration | Prix/mois |
-|---------|--------------|-----------|
-| EKS Control Plane | 1 cluster | ~$73 |
-| EC2 (EKS Nodes) | 2x t3.medium | ~$60 |
-| RDS PostgreSQL | db.t3.small | ~$30 |
-| ALB | 1 ALB | ~$20 |
-| NAT Gateway | 2x NAT | ~$65 |
-| Route53 | 1 zone + queries | ~$2 |
-| **Total** | | **~$250/mois** |
+**Tester l'API :**
+```bash
+ALB_URL=$(terraform output -raw alb_dns_name)
+curl http://$ALB_URL/
+```
 
-### Environnement PROD (avec Multi-AZ)
-
-| Service | Configuration | Prix/mois |
-|---------|--------------|-----------|
-| EKS Control Plane | 1 cluster | ~$73 |
-| EC2 (EKS Nodes) | 3x t3.medium | ~$90 |
-| RDS PostgreSQL | db.t3.small Multi-AZ | ~$60 |
-| ALB | 1 ALB | ~$20 |
-| NAT Gateway | 2x NAT | ~$65 |
-| Route53 | 1 zone + queries | ~$2 |
-| **Total** | | **~$310/mois** |
-
-💡 **Économies possibles** :
-- Utiliser Spot Instances pour EKS : -70% sur les nodes
-- Réduire à 1 NAT Gateway (non-HA) : -$32/mois
-- Arrêter l'environnement hors heures de travail
+**Note :** Si vous avez configuré un domaine avec Route53, utilisez :
+- Frontend : `https://app.votredomaine.com`
+- API : `https://api.votredomaine.com`
 
 ---
 
-## 🔄 CI/CD
+## 📖 Utilisation
 
-### Build et Push des images Docker
+### **Login**
 
 ```bash
-# Build toutes les images
-docker-compose build
+curl -X POST http://YOUR_IP:30081/api/v1/login/access-token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=admin@test.com&password=Test123!"
+```
 
-# Tag pour DEV
-docker tag auth:latest leogrv22/auth:dev
-docker tag users:latest leogrv22/users:dev
-docker tag items:latest leogrv22/items:dev
-docker tag frontend:latest leogrv22/frontend:dev
+**Response :**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer"
+}
+```
 
-# Push vers Docker Hub
+---
+
+### **Get Current User**
+
+```bash
+TOKEN="your_access_token"
+
+curl http://YOUR_IP:30082/api/v1/users/me \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+---
+
+### **Create Item**
+
+```bash
+curl -X POST http://YOUR_IP:30083/api/v1/items/ \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "My First Item",
+    "description": "This is a test item"
+  }'
+```
+
+---
+
+## 🔧 Développement
+
+### **Structure du projet**
+
+```
+fastapi-microservices-platform/
+├── Microservices/
+│   ├── auth/           # Service d'authentification
+│   ├── users/          # Service de gestion des utilisateurs
+│   └── items/          # Service de gestion des items
+├── frontend/           # Application Next.js
+├── helm/
+│   ├── platform/       # Umbrella chart
+│   ├── auth/          # Subchart auth
+│   ├── users/         # Subchart users
+│   ├── items/         # Subchart items
+│   └── frontend/      # Subchart frontend
+├── terraform/          # Infrastructure AWS
+├── overlays/
+│   ├── dev/           # Config k3s local
+│   └── aws/           # Config AWS EKS
+└── docs/              # Documentation
+```
+
+---
+
+### **Modifier un service**
+
+```bash
+# 1. Modifier le code
+cd Microservices/auth
+nano app/main.py
+
+# 2. Rebuild l'image
+docker build -t leogrv22/auth:dev .
 docker push leogrv22/auth:dev
-docker push leogrv22/users:dev
-docker push leogrv22/items:dev
-docker push leogrv22/frontend:dev
-```
 
-### Rolling Update
-
-```bash
-# Update d'un service après push d'une nouvelle image
-kubectl rollout restart deployment/auth -n dev
-
-# Vérifier le rollout
-kubectl rollout status deployment/auth -n dev
-
-# Rollback si problème
-kubectl rollout undo deployment/auth -n dev
+# 3. Redéployer
+kubectl delete pod -n dev -l app.kubernetes.io/name=auth
 ```
 
 ---
 
-## 🧹 Nettoyage
-
-### Supprimer l'application
+### **Voir les logs**
 
 ```bash
-# Supprimer les ressources Kubernetes
-helm uninstall platform -n dev
-helm uninstall traefik -n traefik
+# Logs d'un service
+kubectl logs -n dev -l app.kubernetes.io/name=auth -f
 
-kubectl delete namespace dev
-kubectl delete namespace traefik
-```
+# Logs de tous les pods
+kubectl logs -n dev --all-containers=true -f
 
-### Détruire l'infrastructure
-
-```bash
-cd terraform/
-
-# ⚠️ ATTENTION : Ceci supprime TOUT !
-terraform destroy
-# Confirmer avec : yes
+# Logs d'un pod spécifique
+kubectl logs -n dev POD_NAME -f
 ```
 
 ---
 
-## 🐛 Troubleshooting
-
-### Pods en CrashLoopBackOff
+### **Accéder à un pod**
 
 ```bash
-# Voir les logs du pod
-kubectl logs -n dev <pod-name>
-
-# Voir les events
-kubectl get events -n dev --sort-by='.lastTimestamp' | tail -20
-
-# Describe le pod
-kubectl describe pod -n dev <pod-name>
+kubectl exec -it -n dev POD_NAME -- bash
 ```
 
-### Nodes ne rejoignent pas le cluster
+---
+
+### **Port-forward pour debug**
 
 ```bash
-# Vérifier aws-auth configmap
-kubectl get configmap aws-auth -n kube-system -o yaml
+# Forward le port auth
+kubectl port-forward -n dev svc/platform-auth 8001:80
 
-# Vérifier les logs du node
-aws ssm start-session --target <instance-id>
-```
-
-### ALB ne route pas vers Traefik
-
-```bash
-# Vérifier le Target Group Health
-aws elbv2 describe-target-health \
-  --target-group-arn $(terraform output -raw target_group_arn)
-
-# Vérifier que Traefik écoute sur NodePort 30080
-kubectl get svc -n traefik traefik -o yaml | grep nodePort
-```
-
-### RDS Connection Failed
-
-```bash
-# Vérifier le Security Group
-aws ec2 describe-security-groups \
-  --group-ids $(terraform output -raw rds_security_group_id)
-
-# Tester la connexion depuis un pod
-kubectl run -it --rm psql-test --image=postgres:15 --restart=Never -n dev -- \
-  psql -h <rds-endpoint> -U admin -d microservices_dev
+# Tester
+curl http://localhost:8001/docs
 ```
 
 ---
 
 ## 📚 Documentation
 
-- [AWS EKS Documentation](https://docs.aws.amazon.com/eks/)
-- [Terraform AWS Provider](https://registry.terraform.io/providers/hashicorp/aws/latest/docs)
-- [Traefik Documentation](https://doc.traefik.io/traefik/)
-- [FastAPI Documentation](https://fastapi.tiangolo.com/)
-- [Helm Documentation](https://helm.sh/docs/)
+- **[ARCHITECTURE.md](./ARCHITECTURE.md)** - Architecture détaillée
+- **[AWS_MIGRATION.md](./AWS_MIGRATION.md)** - Guide de migration k3s → EKS
+- **API Documentation** :
+  - Auth : `http://YOUR_IP:30081/docs`
+  - Users : `http://YOUR_IP:30082/docs`
+  - Items : `http://YOUR_IP:30083/docs`
 
 ---
 
-## 👥 Équipe
+## 🧹 Nettoyage
 
-- **Platform Team** : Infrastructure et DevOps
-- **Backend Team** : Microservices FastAPI
-- **Frontend Team** : Interface React
+### **Local (k3s)**
 
----
+```bash
+# Supprimer le déploiement Helm
+helm uninstall platform -n dev
 
-## 📝 Changelog
+# Supprimer le namespace
+kubectl delete namespace dev
 
-### Version 1.0.0 (2025-12)
-- ✅ Déploiement initial sur AWS EKS
-- ✅ Infrastructure Multi-AZ (2 zones)
-- ✅ Microservices Auth, Users, Items, Frontend
-- ✅ RDS PostgreSQL 15 avec backup automatique
-- ✅ ALB + Route53 + SSL (PROD)
-- ✅ Monitoring CloudWatch
-- ✅ Auto-scaling EKS (2-3 nodes)
+# (Optionnel) Supprimer k3s
+/usr/local/bin/k3s-uninstall.sh
+```
 
 ---
 
-## 📄 Licence
+### **AWS (EKS)**
 
-MIT License - Copyright (c) 2025 Microservices Platform Team
+```bash
+# Utiliser le script de nettoyage
+chmod +x cleanup.sh
+./cleanup.sh
+
+# Ou manuellement
+helm uninstall platform -n dev
+kubectl delete namespace dev
+cd terraform/
+terraform destroy
+```
+
+⚠️ **Attention** : `terraform destroy` supprimera TOUTE l'infrastructure AWS !
 
 ---
 
-## 🆘 Support
+## 🐛 Troubleshooting
 
-Pour toute question ou problème :
-- 📧 Email : platform-team@example.com
-- 💬 Slack : #platform-support
-- 🐛 Issues : [GitHub Issues](https://github.com/your-org/microservices-platform/issues)
+### **Pods en CrashLoopBackOff**
+
+```bash
+# Voir les logs
+kubectl logs -n dev POD_NAME
+
+# Décrire le pod
+kubectl describe pod -n dev POD_NAME
+```
+
+### **Connexion base de données échoue**
+
+```bash
+# Vérifier le secret
+kubectl get secret -n dev database-credentials -o yaml
+
+# Tester la connexion depuis un pod
+kubectl run psql-test --rm -it --image=postgres:17 -- \
+  psql "postgresql://postgres:PASSWORD@HOST:5432/DATABASE"
+```
+
+### **Services inaccessibles**
+
+```bash
+# Vérifier les services
+kubectl get svc -n dev
+
+# Vérifier les ingress
+kubectl get ingress -n dev
+
+# Vérifier Traefik
+kubectl get pods -n traefik
+```
 
 ---
 
-**🎉 Bon déploiement ! 🚀**
+## 🤝 Contributing
+
+Les contributions sont les bienvenues ! Merci de :
+1. Fork le projet
+2. Créer une branche (`git checkout -b feature/AmazingFeature`)
+3. Commit les changements (`git commit -m 'Add AmazingFeature'`)
+4. Push la branche (`git push origin feature/AmazingFeature`)
+5. Ouvrir une Pull Request
+
+---
+
+## 📄 License
+
+Ce projet est sous licence MIT.
+
+---
+
+## 👤 Auteur
+
+**Votre Nom**
+- GitHub: [@votreusername](https://github.com/votreusername)
+
+---
+
+## 🙏 Remerciements
+
+- FastAPI
+- Next.js
+- Kubernetes
+- Terraform
+
+---
+
+**Happy coding! 🚀**
