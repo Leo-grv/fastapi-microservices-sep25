@@ -1,7 +1,4 @@
-version: "3.9"
-
 services:
-
   traefik:
     image: traefik:v2.11
     container_name: fastapi-microservices-traefik
@@ -12,31 +9,59 @@ services:
       - "--entrypoints.web.address=:80"
     ports:
       - "80:80"
-      - "8080:8080" # Dashboard
+      - "8080:8080"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
     networks:
       - traefik-net
-    restart: unless-stopped
+
+  auth-service:
+    build:
+      context: ./Microservices/auth
+      dockerfile: Dockerfile
+    container_name: fastapi-microservices-auth
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.auth.rule=PathPrefix(`/auth`) || PathPrefix(`/auth/metrics`)"
+      - "traefik.http.services.auth.loadbalancer.server.port=8000"
+    networks:
+      - traefik-net
 
   users-service:
     build:
-      context: ./fastapi-microservices-sep25/Microservices/users
+      context: ./Microservices/users
       dockerfile: Dockerfile
     container_name: fastapi-microservices-users
-    depends_on:
-      - postgres-db
-    environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres-db:5432/usersdb
     labels:
       - "traefik.enable=true"
-      - "traefik.docker.network=traefik-net"
-      - "traefik.http.routers.users.rule=PathPrefix(`/users`)"
-      - "traefik.http.routers.users.entrypoints=web"
+      - "traefik.http.routers.users.rule=PathPrefix(`/users`) || PathPrefix(`/users/metrics`)"
       - "traefik.http.services.users.loadbalancer.server.port=8000"
     networks:
       - traefik-net
-    restart: unless-stopped
+
+  items-service:
+    build:
+      context: ./Microservices/items
+      dockerfile: Dockerfile
+    container_name: fastapi-microservices-items
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.items.rule=PathPrefix(`/items`) || PathPrefix(`/items/metrics`)"
+      - "traefik.http.services.items.loadbalancer.server.port=8000"
+    networks:
+      - traefik-net
+
+  gateway-service:
+    build:
+      context: ./Microservices/gateway
+      dockerfile: Dockerfile
+    container_name: fastapi-microservices-gateway
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gateway.rule=PathPrefix(`/`) || PathPrefix(`/gateway/metrics`)"
+      - "traefik.http.services.gateway.loadbalancer.server.port=8000"
+    networks:
+      - traefik-net
 
   postgres-db:
     image: postgres:15
@@ -45,14 +70,32 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: usersdb
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
     networks:
       - traefik-net
-    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - traefik-net
+    depends_on:
+      - auth-service
+      - users-service
+      - items-service
+      - gateway-service
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - traefik-net
 
 networks:
   traefik-net:
-
-volumes:
-  postgres_data:
+    driver: bridge
