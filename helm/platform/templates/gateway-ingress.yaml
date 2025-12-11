@@ -1,3 +1,4 @@
+{{- if not .Values.global.useExternalSecrets }}
 # INGRESS pour AUTH
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -65,3 +66,4 @@ spec:
                 name: platform-items
                 port:
                   number: 80
+{{- end }}

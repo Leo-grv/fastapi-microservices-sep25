@@ -1,0 +1,110 @@
+global:
+  imageRegistry: docker.io
+  environment: dev
+  
+  # Utiliser AWS Secrets Manager via External Secrets Operator
+  useExternalSecrets: true
+  
+  # Base de données RDS (remplacer par votre output terraform)
+  database:
+    host: microservices-platform-dev-db.cvrhlcdjhuda.eu-west-3.rds.amazonaws.com  
+    port: "5432"
+    name: microservices
+    user: postgres
+
+# Auth Service
+auth:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: leogrv22/auth
+    tag: dev
+    pullPolicy: Always
+  
+  service:
+    type: ClusterIP  
+    port: 80
+    targetPort: 8000
+  
+  env:
+    APP_ENV: dev
+  
+  resources: {}
+  
+  ingress:
+    enabled: false
+
+# Users Service
+users:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: leogrv22/users
+    tag: dev
+    pullPolicy: Always
+  
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8000
+  
+  env:
+    APP_ENV: dev
+  
+  resources: {}
+  
+  ingress:
+    enabled: false
+
+# Items Service
+items:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: leogrv22/items
+    tag: dev
+    pullPolicy: Always
+  
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8000
+  
+  env:
+    APP_ENV: dev
+  
+  resources: {}
+  
+  ingress:
+    enabled: false
+
+# Frontend
+frontend:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: leogrv22/frontend
+    tag: dev
+    pullPolicy: Always
+  
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 3000
+  
+  env:
+    # URL de l'ALB (remplacer par output terraform)
+    NEXT_PUBLIC_API_BASE: "http://microservices-p-dev-alb-791502228.eu-west-3.elb.amazonaws.com"  
+  
+  resources: {}
+  
+  ingress:
+    enabled: false
+
+# Désactiver PostgreSQL (on utilise RDS)
+postgresql:
+  enabled: false

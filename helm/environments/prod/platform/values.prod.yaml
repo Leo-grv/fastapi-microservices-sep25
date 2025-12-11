@@ -1,0 +1,118 @@
+# ============================================================================
+# PRODUCTION VALUES - apisep25.fr
+# ============================================================================
+
+global:
+  environment: prod
+  domain: platform.apisep25.fr
+  database:
+    host: microservices-platform-prod-db.cvrhlcdjhuda.eu-west-3.rds.amazonaws.com
+    port: 5432
+    name: microservices_prod
+    user: dbadmin
+    secretName: database-credentials
+
+# Auth Service
+auth:
+  enabled: true
+  replicaCount: 3
+  image:
+    repository: leogrv22/auth
+    tag: v1.0.0
+    pullPolicy: IfNotPresent
+  
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+# Users Service  
+users:
+  enabled: true
+  replicaCount: 3
+  image:
+    repository: leogrv22/users
+    tag: v1.0.0
+    pullPolicy: IfNotPresent
+  
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+# Items Service
+items:
+  enabled: true
+  replicaCount: 3
+  image:
+    repository: leogrv22/items
+    tag: v1.0.0
+    pullPolicy: IfNotPresent
+  
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+# Frontend
+frontend:
+  enabled: true
+  replicaCount: 3
+  image:
+    repository: leogrv22/frontend
+    tag: v1.0.0
+    pullPolicy: IfNotPresent
+  
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+# Ingress Traefik
+ingress:
+  enabled: true
+  className: traefik
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+  domain: platform.apisep25.fr
+
+# PodDisruptionBudget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2

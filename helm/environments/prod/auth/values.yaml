@@ -1,0 +1,19 @@
+replicaCount: 1
+
+image:
+  registry: docker.io
+  repository: leogrv22/auth
+  tag: v1.0.0
+  pullPolicy: IfNotPresent
+
+env:
+  APP_ENV: prod
+
+secrets:
+  SECRET_KEY: null
+  DATABASE_URL: null
+
+resources: {}
+
+ingress:
+  enabled: false

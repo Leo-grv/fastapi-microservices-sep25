@@ -1,5 +1,5 @@
 # ============================================================================
-# TERRAFORM VARIABLES - ENVIRONNEMENT PROD
+# TERRAFORM VARIABLES - ENVIRONNEMENT PROD - apisep25.fr
 # ============================================================================
 
 # Général
@@ -8,45 +8,68 @@ project_name = "microservices-platform"
 environment  = "prod"
 
 # VPC
-vpc_cidr             = "10.0.0.0/16"
-public_subnets       = ["10.0.1.0/24", "10.0.10.0/24"]
-private_subnets_eks  = ["10.0.2.0/24", "10.0.20.0/24"]
-private_subnets_rds  = ["10.0.3.0/24", "10.0.30.0/24"]
+vpc_cidr             = "10.1.0.0/16"  # Différent du DEV (10.0.0.0/16)
+public_subnets       = ["10.1.1.0/24", "10.1.10.0/24"]
+private_subnets_eks  = ["10.1.2.0/24", "10.1.20.0/24"]
+private_subnets_rds  = ["10.1.3.0/24", "10.1.30.0/24"]
 
 # EKS
-eks_cluster_version   = "1.28"
-eks_node_instance_types = ["t3.medium"]
-eks_node_desired_size = 3  # Plus de nodes en prod
-eks_node_min_size     = 2
-eks_node_max_size     = 6  # Peut scaler plus haut
+eks_cluster_version      = "1.28"
+eks_node_instance_types  = ["t3.medium"]
+eks_node_desired_size    = 3  # 3 nodes pour HA
+eks_node_min_size        = 2
+eks_node_max_size        = 6
 
-# RDS
-rds_instance_class    = "db.t3.small"
-rds_allocated_storage = 50  # Plus de storage en prod
-rds_engine_version    = "15.4"
-rds_database_name     = "microservices_prod"
-rds_master_username   = "admin"
-rds_master_password   = "CHANGEME_PROD_STRONG_PASSWORD_XYZ!"  # ⚠️ OBLIGATOIRE À CHANGER !
-rds_multi_az          = true  # ✅ Multi-AZ activé pour HA en prod
+# RDS - Configuration Production
+rds_instance_class       = "db.t3.medium"  # Plus puissant que dev
+rds_allocated_storage    = 100             # 100 GB
+rds_engine_version       = "15.4"
+rds_database_name        = "microservices_prod"
+rds_master_username      = "admin"
+rds_master_password      = "ChangeMeVendrediMatin123!"  # ⚠️ À CHANGER VENDREDI
+rds_multi_az             = true             # ✅ Multi-AZ pour HA
+rds_backup_retention     = 30               # 30 jours de backups
+rds_backup_window        = "03:00-04:00"    # 3h-4h du matin
+rds_maintenance_window   = "mon:04:00-mon:05:00"  # Lundi 4h-5h
 
-# Route53
-domain_name         = "leotest.abrdns.com"
-create_route53_zone = false  # false si la zone existe déjà
+# Route53 / DNS
+domain_name          = "apisep25.fr"
+create_route53_zone  = false  # Acheter sur Ionos, on crée juste la Hosted Zone
 
-# Application
-app_secret_key = "prod-super-secret-key-VERY-SECURE-987654321"  # ⚠️ OBLIGATOIRE À CHANGER !
+# Application Secrets
+app_secret_key = "prod-ultra-secure-secret-key-apisep25-XyZ987!"  # ⚠️ À CHANGER VENDREDI
 
+# Images Docker (versions fixes en prod)
 docker_images = {
-  auth     = "leogrv22/auth:v1.0.0"    # Utiliser des versions stables en prod
+  auth     = "leogrv22/auth:v1.0.0"
   users    = "leogrv22/users:v1.0.0"
   items    = "leogrv22/items:v1.0.0"
   frontend = "leogrv22/frontend:v1.0.0"
 }
 
-# Tags
+# Tags AWS
 tags = {
   Environment = "prod"
-  Team        = "Platform"
-  CostCenter  = "Production"
-  Compliance  = "Required"
+  Project     = "microservices-platform"
+  ManagedBy   = "terraform"
+  Domain      = "apisep25.fr"
+  CostCenter  = "production"
+  Team        = "platform"
 }
+
+# ============================================================================
+# NOTES IMPORTANTES
+# ============================================================================
+# 
+# ⚠️ AVANT VENDREDI MATIN :
+# 1. Changer rds_master_password (mot de passe fort)
+# 2. Changer app_secret_key (clé secrète unique)
+# 3. Vérifier que les images v1.0.0 sont poussées sur Docker Hub
+#
+# 📝 VENDREDI MATIN :
+# 1. Créer Hosted Zone Route53 pour apisep25.fr
+# 2. Configurer nameservers sur Ionos
+# 3. Attendre propagation DNS (5-30 min)
+# 4. terraform apply avec ce fichier
+#
+# ============================================================================

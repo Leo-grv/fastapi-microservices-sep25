@@ -1,0 +1,10 @@
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+# Remplacer api.ts par api.prod.ts
+RUN cp src/lib/api.prod.ts src/lib/api.ts
+RUN npm run build
+EXPOSE 3000
+CMD ["npm", "start"]

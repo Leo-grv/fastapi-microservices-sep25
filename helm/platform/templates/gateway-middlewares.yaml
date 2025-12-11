@@ -1,3 +1,4 @@
+{{- if not .Values.global.useExternalSecrets }}
 # Middleware pour enlever /auth du chemin
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
@@ -45,3 +46,5 @@ spec:
     average: 100
     period: 1m
     burst: 50
+
+{{- end }}
