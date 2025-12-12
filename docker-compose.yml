@@ -23,6 +23,8 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.auth.rule=PathPrefix(`/auth`) || PathPrefix(`/auth/metrics`)"
+      - "traefik.http.middlewares.auth-stripprefix.stripprefix.prefixes=/auth"
+      - "traefik.http.routers.auth.middlewares=auth-stripprefix"
       - "traefik.http.services.auth.loadbalancer.server.port=8000"
     networks:
       - traefik-net
@@ -35,6 +37,8 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.users.rule=PathPrefix(`/users`) || PathPrefix(`/users/metrics`)"
+      - "traefik.http.middlewares.users-stripprefix.stripprefix.prefixes=/users"
+      - "traefik.http.routers.users.middlewares=users-stripprefix"
       - "traefik.http.services.users.loadbalancer.server.port=8000"
     networks:
       - traefik-net
@@ -47,6 +51,8 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.items.rule=PathPrefix(`/items`) || PathPrefix(`/items/metrics`)"
+      - "traefik.http.middlewares.items-stripprefix.stripprefix.prefixes=/items"
+      - "traefik.http.routers.items.middlewares=items-stripprefix"
       - "traefik.http.services.items.loadbalancer.server.port=8000"
     networks:
       - traefik-net
@@ -59,6 +65,8 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.gateway.rule=PathPrefix(`/`) || PathPrefix(`/gateway/metrics`)"
+      - "traefik.http.middlewares.gateway-stripprefix.stripprefix.prefixes=/gateway"
+      - "traefik.http.routers.gateway.middlewares=gateway-stripprefix"
       - "traefik.http.services.gateway.loadbalancer.server.port=8000"
     networks:
       - traefik-net

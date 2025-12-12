@@ -2,22 +2,22 @@ global:
   scrape_interval: 5s
 
 scrape_configs:
-  - job_name: 'auth-service'
+  - job_name: 'auth'
+    metrics_path: /auth/metrics
     static_configs:
       - targets: ['auth-service:8000']
-    metrics_path: /metrics
 
-  - job_name: 'users-service'
+  - job_name: 'users'
+    metrics_path: /users/metrics
     static_configs:
       - targets: ['users-service:8000']
-    metrics_path: /metrics
 
-  - job_name: 'items-service'
+  - job_name: 'items'
+    metrics_path: /items/metrics
     static_configs:
       - targets: ['items-service:8000']
-    metrics_path: /metrics
 
-  - job_name: 'gateway-service'
+  - job_name: 'gateway'
+    metrics_path: /gateway/metrics
     static_configs:
       - targets: ['gateway-service:8000']
-    metrics_path: /metrics

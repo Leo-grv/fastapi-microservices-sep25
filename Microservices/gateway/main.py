@@ -13,17 +13,14 @@ def root():
 @app.get("/auth")
 async def call_auth():
     async with httpx.AsyncClient() as client:
-        r = await client.get("http://auth-service:8000/auth")
-        return r.json()
+        return (await client.get("http://auth-service:8000/auth")).json()
 
 @app.get("/users")
 async def call_users():
     async with httpx.AsyncClient() as client:
-        r = await client.get("http://users-service:8000/users")
-        return r.json()
+        return (await client.get("http://users-service:8000/users")).json()
 
 @app.get("/items")
 async def call_items():
     async with httpx.AsyncClient() as client:
-        r = await client.get("http://items-service:8000/items")
-        return r.json()
+        return (await client.get("http://items-service:8000/items")).json()
